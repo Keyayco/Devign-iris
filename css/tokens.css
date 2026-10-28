@@ -1,0 +1,41 @@
+/* Design tokens. Change colour, type, and spacing here only. */
+:root {
+  --bg: #05080f;
+  --bg-raised: #0a111e;
+  --bg-sunken: #03060b;
+  --line: #16233a;
+  --line-strong: #223555;
+
+  --text: #e6eef9;
+  --text-muted: #8fa3c0;
+  --text-faint: #7388a6;
+
+  --cyan: #3de0ff;
+  --cyan-dim: #1b6f82;
+  --cyan-wash: rgba(61, 224, 255, 0.1);
+  --ok: #4be3a1;
+  --warn: #ffb347;
+  --bad: #ff6b81;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.5rem;
+
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --nav-h: 3.5rem;
+  --rail-w: 11rem;
+  --tap: 2.75rem;
+}

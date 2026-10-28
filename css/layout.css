@@ -1,0 +1,74 @@
+/* App shell: top bar, content column, bottom nav (phone) / side rail (tablet). */
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--fs-md) / 1.5 var(--font-ui);
+}
+#app {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: "top" "main" "nav";
+}
+.boot { margin: var(--sp-6) var(--sp-4); color: var(--text-muted); }
+.boot--error { color: var(--bad); }
+
+.topbar {
+  grid-area: top;
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: max(var(--sp-3), env(safe-area-inset-top)) var(--sp-4) var(--sp-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; letter-spacing: 0.01em; }
+.brand svg { width: 1.5rem; height: 1.5rem; }
+.topbar__status { margin-left: auto; display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+
+.main {
+  grid-area: main;
+  width: 100%; max-width: 56rem; margin: 0 auto;
+  padding: var(--sp-4) var(--sp-4) var(--sp-6);
+  min-width: 0;
+}
+
+.nav {
+  grid-area: nav;
+  position: sticky; bottom: 0; z-index: 5;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  background: var(--bg-raised);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.nav a {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: var(--nav-h);
+  color: var(--text-muted); text-decoration: none; font-size: var(--fs-xs);
+}
+.nav a[aria-current="page"] { color: var(--cyan); }
+.nav a[aria-current="page"]::before {
+  content: ""; position: absolute; top: 0; left: 25%; right: 25%; height: 2px; background: var(--cyan);
+}
+.nav__count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-faint); }
+
+@media (min-width: 768px) {
+  #app {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "top top" "nav main";
+  }
+  .nav {
+    position: sticky; top: 4rem; bottom: auto; align-self: start;
+    grid-template-columns: 1fr; border-top: 0; border-right: 1px solid var(--line);
+    background: transparent; padding: var(--sp-3) 0;
+  }
+  .nav a { flex-direction: row; justify-content: space-between; padding: 0 var(--sp-4); font-size: var(--fs-md); }
+  .nav a[aria-current="page"] { background: var(--cyan-wash); }
+  .nav a[aria-current="page"]::before { top: 0; bottom: 0; left: 0; right: auto; width: 2px; height: auto; }
+  .main { padding: var(--sp-5) var(--sp-5) var(--sp-6); }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "devign-iris",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Devign Iris - personal AI operating system. Phase 1: Iris Shell (vanilla HTML/CSS/JS, no dependencies).",
+  "scripts": {
+    "start": "node serve.mjs",
+    "test": "node tests/run-tests.mjs"
+  }
+}
