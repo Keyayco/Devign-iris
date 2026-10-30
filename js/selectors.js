@@ -1,7 +1,13 @@
 // Read-only helpers that derive facts from stored records. DOM-free.
 import { COLLECTIONS, label } from './schema.js';
 
-export const todayISO = (now = new Date()) => now.toISOString().slice(0, 10);
+// Due dates are calendar dates, so compare them to the device's local date.
+export const todayISO = (now = new Date()) => {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 export const byId = (list, id) => list.find((r) => r.id === id) || null;
 export const projectName = (state, id) => (byId(state.projects, id) || {}).name || '';
 export const sampleTag = (r) => (r.sample ? ' [sample]' : '');

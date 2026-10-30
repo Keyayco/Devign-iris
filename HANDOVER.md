@@ -3,21 +3,25 @@
 Written for an AI coding agent working through Replit on a phone or tablet. Read `RULES.md` and `STATE.md` first. They are short.
 
 ## Situation
-- Phase 1 (Iris Shell) is built and was tested in a sandbox with Chromium emulation. It has **never been run in Replit**, never been committed to GitHub from this session, and never been opened on a real Android device.
-- Nothing needs installing: no npm dependencies, no build step, no API keys.
-- The previous Claude conversation is not needed. Everything required is in this repository.
+- Phase 1 (Iris Shell) was imported from GitHub `main` at `459c038`.
+- Fixed overdue-date comparison to use the local calendar date. Regression tests now cover both sides of UTC midnight, overdue dates, due-today/future/undated dates, and completed tasks.
+- On 2026-10-29, `npm test` passed 15/15 with Node 24.22.1. The Replit Vite preview browser suite passed 96/96 checks at phone and tablet viewport sizes, including editing, deletion, project-reference detachment, JSON download/parse, and timezone-sensitive overdue badges.
+- The only product-code changes are `js/selectors.js` and `tests/run-tests.mjs`. No dependencies were added; nothing was pushed to GitHub or deployed.
+- The browser tests used a temporary Node/CDP harness and headless Chromium 152 against the Replit preview proxy. The checked-in `tests/smoke.py` was not run because Python Playwright is unavailable. Real Android and additional browser-engine checks remain open.
+- A later 390x844 touch-emulation check passed eye-segment touch, Enter, and Space activation. The add-project dialog kept its controls reachable in a reduced-height viewport, but focusing the final textarea left part of its bounds below the scroll area in one emulation check. This is not a physical Android/soft-keyboard result.
+- The product is still dependency-free vanilla HTML/CSS/JS. Replit uses Vite to serve the existing `index.html`; `npm start` remains the repository's static server.
 
-## Get it running (first session, run-and-verify only)
-1. Put the project at the Replit project root so `index.html`, `serve.mjs`, `package.json` sit at the top level. Easiest route: create a Node.js Repl, upload `devign-iris.zip`, and in the Shell run `unzip devign-iris.zip` then move the contents up if they landed in a subfolder. (Not verified in Replit; if `unzip` is missing, upload the files individually or import the GitHub repo instead.)
-2. Shell: `npm test`. Expect `14/14 passed`.
-3. Run command: `npm start` (runs `node serve.mjs`, reads `PORT` if Replit sets it, otherwise 8000, binds 0.0.0.0). Open the Webview/preview. If the preview shows nothing, check the Replit console for the port it expects and set `PORT` accordingly. This step is unverified.
-4. In the running app, check on the phone: five nav items work; "Load sample data" shows Sample badges; a command such as `briefing` answers; adding a project works and survives refresh.
-5. Record outcomes in `LOGS.md` under today's date: what ran, what failed, exact error text. Do not write "works" for anything not actually run.
+## Run in this Replit project
+1. Start the `artifacts/devign-iris: web` workflow for the preview.
+2. From `artifacts/devign-iris`, run `npm test`; the current baseline is 15/15.
+3. From `artifacts/devign-iris`, run `npm start` to exercise the standalone static server. It uses `PORT`, or 8000 by default, and binds to `0.0.0.0`.
+4. Latest Replit preview flow verification: 96/96 checks passed at 390x844 and 820x1180 using the temporary CDP runner. Its script is not committed.
+5. The checked-in `tests/smoke.py` still requires Python Playwright, which is not installed here; no dependency was added. Record only actions actually run in `LOGS.md`.
 
-Optional browser test (needs Playwright, skip if awkward on mobile): `node serve.mjs &` then `python3 tests/smoke.py http://localhost:8000`. Expect 50/50.
+Optional source browser test (requires Python Playwright): `node serve.mjs &` then `python3 tests/smoke.py http://localhost:8000`. It was not run in this Replit project; the preview suite above was run with separate temporary CDP automation.
 
-## Recommended first coding task (after the run check passes)
-Fix the overdue date bug (STATE.md limitation 2): `todayISO` in `js/selectors.js` uses UTC; make it use the local date, add a unit test in `tests/run-tests.mjs`, run `npm test`. This is small, reversible, and in scope for Phase 1. Do not start Phase 2.
+## Recommended next milestone
+Run a manual check on the target Android phone/tablet for the final textarea and actual on-screen keyboard, along with eye-segment taps. The current checks use Chromium viewport/touch emulation only; the textarea focus measurement needs device confirmation. Keep Phase 2 storage work approval-gated; compare options before implementing it.
 
 ## Do not do without explicit approval
 - Add a database, backend, auth, framework, bundler, or TypeScript.
@@ -40,13 +44,13 @@ Fix the overdue date bug (STATE.md limitation 2): `todayISO` in `js/selectors.js
 - Logic modules (`schema`, `store`, `selectors`, `commands`, `sample-data`) must not touch `document` or `window`.
 - Record text is rendered through `h()` text nodes. No `innerHTML` with user data.
 - Unavailable things are shown as unavailable ("Not connected", "Unknown", "Not verified").
-- Supply complete replacement files when practical. After each change run `npm test`, update `STATE.md`/`LOGS.md`, and keep the file manifest accurate.
+- Supply complete replacement files when practical. After each change run `npm test`, update `STATE.md`, `HANDOVER.md`, and `LOGS.md`, and keep `FILE_MANIFEST.md` accurate.
 
-## Acceptance criteria for the next milestone (run check)
-- `npm test` passes 14/14 in Replit.
-- App loads in the Replit preview with no console errors, and the five views render.
-- `LOGS.md` has an entry stating exactly what was run and the result.
-- `STATE.md` "NOT verified" list is updated to reflect what was actually checked.
+## Completed milestone verification
+- `npm test` passes 15/15 in Replit.
+- The Replit preview browser suite passed 96/96 checks with no console errors or uncaught page exceptions.
+- The browser suite covers all five views, add/edit/delete, reload persistence, sample-data handling, JSON export, and local-date overdue display.
+- `STATE.md` distinguishes browser-emulated checks from the remaining physical-device and cross-browser checks.
 
 ## Open decisions for the owner
 1. Where should durable records live (Phase 2)? Options to compare, not decide: Replit-hosted SQLite or JSON file behind a small server, or a free-tier hosted database. Browser-only storage does not satisfy the brief long term.

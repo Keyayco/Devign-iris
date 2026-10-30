@@ -4,7 +4,7 @@ import { validate, FIELDS, COLLECTIONS } from '../js/schema.js';
 import { createStore, STORAGE_KEY } from '../js/store.js';
 import { getSampleRecords } from '../js/sample-data.js';
 import { runCommand } from '../js/commands.js';
-import { dataMode, attentionReasons } from '../js/selectors.js';
+import { dataMode, attentionReasons, todayISO, isOverdue } from '../js/selectors.js';
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -95,6 +95,29 @@ test('selectors: dataMode empty / sample', () => {
   assert.equal(dataMode(s.getState()), 'empty');
   s.loadSample(getSampleRecords(NOW));
   assert.equal(dataMode(s.getState()), 'sample');
+});
+
+test('selectors: overdue uses local date and excludes due-today, future, completed, and undated tasks', () => {
+  const originalTZ = process.env.TZ;
+  try {
+    process.env.TZ = 'Africa/Johannesburg';
+    const afterLocalMidnight = new Date('2026-10-12T22:30:00.000Z');
+    assert.equal(todayISO(afterLocalMidnight), '2026-10-13');
+    assert.equal(isOverdue({ status: 'open', due: '2026-10-12' }, afterLocalMidnight), true);
+    assert.equal(isOverdue({ status: 'open', due: '2026-10-13' }, afterLocalMidnight), false);
+    assert.equal(isOverdue({ status: 'open', due: '2026-10-14' }, afterLocalMidnight), false);
+    assert.equal(isOverdue({ status: 'open', due: '' }, afterLocalMidnight), false);
+
+    process.env.TZ = 'America/Los_Angeles';
+    const beforeLocalMidnight = new Date('2026-10-13T00:30:00.000Z');
+    assert.equal(todayISO(beforeLocalMidnight), '2026-10-12');
+    assert.equal(isOverdue({ status: 'open', due: '2026-10-12' }, beforeLocalMidnight), false);
+    assert.equal(isOverdue({ status: 'open', due: '2026-10-11' }, beforeLocalMidnight), true);
+    assert.equal(isOverdue({ status: 'done', due: '2026-10-11' }, beforeLocalMidnight), false);
+  } finally {
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  }
 });
 
 test('task done toggle', () => {

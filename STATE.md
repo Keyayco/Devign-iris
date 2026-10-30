@@ -1,35 +1,37 @@
 # STATE
 
-Last updated: 2026-10-28. Phase 1 (Iris Shell). Package: COMPLETE PROJECT PACKAGE.
-Repository revision: **Unknown.** Nothing from this session has been committed to GitHub or deployed anywhere.
+Last updated: 2026-10-29. Phase 1 (Iris Shell). Imported from GitHub `main` at `459c038`.
+No changes have been pushed to GitHub. The Replit preview is running; no deployment was made.
 
 ## Implemented (and how it was checked)
 
 | Area | Status | Evidence |
 |---|---|---|
-| Responsive shell: bottom nav on phone, side rail at 768px+ | Works in Chromium emulation | smoke test at 390x844 and 820x1180, no horizontal overflow |
-| Navigation: Command, Projects, Agents, Activity, Tasks (hash routes) | Works | smoke test |
-| Command view: Iris eye, command box, chips, transcript, Connections, Data panel | Works | smoke test |
-| Iris eye: one segment per stored project, coloured by latest evidence level; sample dashed, blocked outlined | Works | smoke test (segment count, empty caption); colours checked visually in screenshots |
-| Local commands (9) | Work | 14 unit tests + smoke test |
-| Projects / Agents / Activity / Tasks: list, expand, add, edit, delete, validation | Add, validation, toggle, persistence checked; edit and delete have unit-test coverage at store level only | smoke test + unit tests |
-| Empty states for every view | Work | smoke test |
-| Sample data: load, label, remove without touching real records | Works | unit + smoke tests |
-| Persistence: localStorage, survives reload; corrupt data backed up; save errors surfaced | Works | unit + smoke tests |
-| Export JSON (download) | **Not tested** | button exists; download not exercised |
+| Responsive shell: bottom nav on phone, side rail at 768px+ | Works in Chromium emulation | Replit preview suite at 390x844 and 820x1180; no horizontal overflow |
+| Navigation: Command, Projects, Agents, Activity, Tasks (hash routes) | All five routes and empty states checked | Replit preview browser suite at 390x844 and 820x1180 |
+| Command view: Iris eye, command box, chips, transcript, Connections, Data panel | Works | Replit preview browser suite and visual screenshot |
+| Iris eye: one segment per stored project, coloured by latest evidence level; sample dashed, blocked outlined | Rendering and selection work in Chromium emulation | Preview suite (segment count, empty caption); CDP touch, Enter, and Space activation; visual appearance checked in screenshot |
+| Local commands (9) | Work | 15 unit tests + Replit preview browser suite |
+| Projects / Agents / Activity / Tasks: list, expand, add, edit, delete, validation | Add, validation, edit prefill/save, delete cancel/accept, and project-reference detachment checked | Replit preview browser suite + unit tests |
+| Empty states for every view | Work | Replit preview browser suite |
+| Sample data: load, label, remove without touching real records | Works | Unit tests + Replit preview browser suite |
+| Persistence: localStorage, survives reload; corrupt data backed up; save errors surfaced | Works | Unit tests + Replit preview browser suite |
+| Export JSON (download) | Downloaded and parsed in browser | Replit preview browser suite; exported records matched edited UI state |
 | Static server: serves only index.html, css/, js/; blocks traversal | Works | curl checks (package.json, serve.mjs, tests/, ../ all 404) |
 
 ## Verified results
-- `npm test` / `node tests/run-tests.mjs`: 14/14 passed (Node 22.22.2).
-- `tests/smoke.py` against `node serve.mjs`: 50/50 passed (Playwright Chromium 141, touch emulation, phone 390x844 and tablet 820x1180). No console errors.
-- `npm start` starts the server and `GET /` returned 200.
+- `npm test` / `node tests/run-tests.mjs`: 15/15 passed (Node 24.22.1). The added regression test covers local-date boundaries in Johannesburg and Los Angeles, due-today/future/undated tasks, and completed tasks.
+- Before the fix, reproduced both UTC boundary errors: in `Africa/Johannesburg`, `2026-10-12T22:30Z` is local October 13 but `todayISO` returned October 12; in `America/Los_Angeles`, `2026-10-13T00:30Z` is local October 12 but `todayISO` returned October 13.
+- Replit preview browser suite: 96/96 checks passed using temporary Node/CDP automation and headless Chromium 152, at 390x844 and 820x1180. It covered the full navigation/data flows, edit and delete for all four record types, confirmation cancellation and acceptance, project-reference detachment, an actual JSON download and parse, and the overdue badge under an emulated Johannesburg clock. No browser console errors or uncaught page exceptions were observed.
+- `tests/smoke.py` was not run because Python Playwright is not installed. The temporary CDP runner was not added to the repository; no browser-test dependency was added.
+- The Vite web workflow restarted successfully and served the preview. No GitHub push or deployment was made.
 
 ## NOT verified
-- Real Android devices (Galaxy A56 browser, tablet). Only desktop Chromium emulation was used.
+- Real Android devices (Galaxy A56 browser, tablet). Only headless Chromium viewport emulation was used.
 - Firefox, Safari, Samsung Internet.
-- Anything in Replit (running, deploying, `npm start`, port handling).
 - GitHub upload workflow on a phone.
-- Export JSON download, Edit and Delete buttons through the UI, the project-segment tap in the Iris eye (keyboard and touch), dialog behaviour with the on-screen keyboard.
+- Real Android soft-keyboard behavior in the form dialog. Touch taps and Enter/Space activation on an eye segment passed in Chromium emulation.
+- A mobile-emulation focus check showed the final project textarea extending below the form scroll area at 390x844; a reduced-height viewport kept the dialog and Save button visible. Physical-device behavior remains unknown.
 - Accessibility beyond basics (focus rings, labels, reduced-motion CSS are present; no audit was run).
 
 ## Architecture
@@ -44,11 +46,10 @@ No environment variables, secrets, or external services. `PORT` optional for `se
 
 ## Known limitations and defects
 1. **Persistence is browser-only.** The brief requires records to survive restarts; this holds per browser/profile only. Clearing site data erases everything. A server-backed store is a later, approval-gated decision.
-2. **Overdue uses the UTC date**, not local time. Near midnight in UTC+2 a task can be flagged overdue up to two hours late. Fix: compare against a local-date string.
-3. No import of exported JSON. Export exists, restore does not.
-4. Command transcript is session-only (not saved).
-5. Activity `timestamp` is set at creation and not editable.
-6. Eye shows at most 12 projects (caption says so beyond that).
-7. No PWA/service worker, no offline support, no authentication.
-8. Edits use native `window.confirm` dialogs for destructive actions.
-9. System fonts only (no network during build; avoids external requests).
+2. No import of exported JSON. Export exists, restore does not.
+3. Command transcript is session-only (not saved).
+4. Activity `timestamp` is set at creation and not editable.
+5. Eye shows at most 12 projects (caption says so beyond that).
+6. No PWA/service worker, no offline support, no authentication.
+7. Edits use native `window.confirm` dialogs for destructive actions.
+8. System fonts only (no network during build; avoids external requests).
