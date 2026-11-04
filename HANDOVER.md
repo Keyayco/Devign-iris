@@ -3,30 +3,29 @@
 Written for an AI coding agent working through Replit on a phone or tablet. Read `RULES.md` and `STATE.md` first. They are short.
 
 ## Situation
-- Phase 1 (Iris Shell) was imported from GitHub `main` at `459c038`.
-- Fixed overdue-date comparison to use the local calendar date. Regression tests now cover both sides of UTC midnight, overdue dates, due-today/future/undated dates, and completed tasks.
-- On 2026-10-29, `npm test` passed 15/15 with Node 24.22.1. The Replit Vite preview browser suite passed 96/96 checks at phone and tablet viewport sizes, including editing, deletion, project-reference detachment, JSON download/parse, and timezone-sensitive overdue badges.
-- The only product-code changes are `js/selectors.js` and `tests/run-tests.mjs`. No dependencies were added; nothing was pushed to GitHub or deployed.
-- The browser tests used a temporary Node/CDP harness and headless Chromium 152 against the Replit preview proxy. The checked-in `tests/smoke.py` was not run because Python Playwright is unavailable. Real Android and additional browser-engine checks remain open.
-- A later 390x844 touch-emulation check passed eye-segment touch, Enter, and Space activation. The add-project dialog kept its controls reachable in a reduced-height viewport, but focusing the final textarea left part of its bounds below the scroll area in one emulation check. This is not a physical Android/soft-keyboard result.
-- The product is still dependency-free vanilla HTML/CSS/JS. Replit uses Vite to serve the existing `index.html`; `npm start` remains the repository's static server.
+- This patch starts from GitHub `main` baseline `6cfe5d2fcd9031fe7b50fb8570fd76b36d3e58b0`. It adds a public, read-only GitHub sync at the owner's explicit request; changes are local and have not been pushed or deployed.
+- GitHub data is kept separate in `project.github` and a dedicated localStorage cache key. The schema-v1 project records and manually entered notes are preserved.
+- Current source tests: `npm test` passes 23/23, including discovery/branch pagination, docs and missing files, duplicate prevention, manual-note preservation, API failures, empty repos, and quota pause/resume.
+- A bounded live browser sync of the final implementation on 2026-11-04 discovered 101 public non-fork repos; 12 had details read, five empty repos were skipped, 84 were queued, zero sync issues were reported, and 22 anonymous REST requests remained. The full sync was not completed; unit tests cover queuing and post-reset resume.
+- Earlier mobile-preview observations and physical-device/browser-engine limits remain in `STATE.md` and the older `LOGS.md` entries.
+- The product is dependency-free vanilla HTML/CSS/JS. `npm start` runs the repository's static server.
 
-## Run in this Replit project
-1. Start the `artifacts/devign-iris: web` workflow for the preview.
-2. From `artifacts/devign-iris`, run `npm test`; the current baseline is 15/15.
-3. From `artifacts/devign-iris`, run `npm start` to exercise the standalone static server. It uses `PORT`, or 8000 by default, and binds to `0.0.0.0`.
-4. Latest Replit preview flow verification: 96/96 checks passed at 390x844 and 820x1180 using the temporary CDP runner. Its script is not committed.
-5. The checked-in `tests/smoke.py` still requires Python Playwright, which is not installed here; no dependency was added. Record only actions actually run in `LOGS.md`.
+## Run and verify
+1. Run `npm test` (Node 18+; no dependencies).
+2. Run `npm start`; open `http://localhost:8000`. The static server serves `index.html`, `css/`, and `js/`.
+3. Open Command → Connections to see connection state, counts, quota/queue notice, and manual sync. First open starts discovery when there is no fresh completed cache.
+4. Keep the app open for automatic resume after the public GitHub API quota resets. A later open also resumes queued work. No token is needed or accepted.
+5. Record only verification actually performed in `LOGS.md`. The checked-in `tests/smoke.py` requires Python Playwright; verify availability before claiming it ran.
 
-Optional source browser test (requires Python Playwright): `node serve.mjs &` then `python3 tests/smoke.py http://localhost:8000`. It was not run in this Replit project; the preview suite above was run with separate temporary CDP automation.
+The unauthenticated REST quota is shared. One pass details at most 12 changed repositories, budgeting four REST requests per repo plus an eight-request reserve. The live snapshot had 96 non-empty and five empty repos, so a full first sync is expected to take about eight hourly quota windows total if the list is unchanged.
 
 ## Recommended next milestone
-Run a manual check on the target Android phone/tablet for the final textarea and actual on-screen keyboard, along with eye-segment taps. The current checks use Chromium viewport/touch emulation only; the textarea focus measurement needs device confirmation. Keep Phase 2 storage work approval-gated; compare options before implementing it.
+Review the local patch package and test report. If approved, apply it to the intended project, repeat `npm test`, and perform a live sync after the public quota is available. Do not push or deploy without a separate explicit request.
 
 ## Do not do without explicit approval
 - Add a database, backend, auth, framework, bundler, or TypeScript.
 - Call any AI model or store an API key anywhere.
-- Add GitHub or Replit integrations, shell access, or auto-deploy.
+- Add another integration, shell access, or auto-deploy.
 - Start Phase 2 (server-backed memory). That needs a written trade-off comparison of low-cost options first (RULES.md, brief section 5).
 - Rewrite files that are not part of the task. Do not change the `devign-iris:v1` storage key or `schema` version without a migration.
 
@@ -36,6 +35,7 @@ Run a manual check on the target Android phone/tablet for the final textarea and
 | Add or change a record field | `js/schema.js` (FIELDS), the matching `js/views/*.js` detail list, `js/sample-data.js`, tests |
 | Add a local command | `js/commands.js`, `tests/run-tests.mjs`, HELP_LINES |
 | Change storage | `js/store.js` (storage is injected; keep it testable) |
+| Change GitHub API/cache behavior | `js/integrations/github.js`, `js/integrations/github-cache.js`, mocked tests |
 | Colours, spacing, type | `css/tokens.css` |
 | Layout breakpoints | `css/layout.css` (single breakpoint at 768px) |
 | Iris eye | `js/iris-eye.js`, `.eye-*` rules in `css/components.css` |
@@ -47,10 +47,9 @@ Run a manual check on the target Android phone/tablet for the final textarea and
 - Supply complete replacement files when practical. After each change run `npm test`, update `STATE.md`, `HANDOVER.md`, and `LOGS.md`, and keep `FILE_MANIFEST.md` accurate.
 
 ## Completed milestone verification
-- `npm test` passes 15/15 in Replit.
-- The Replit preview browser suite passed 96/96 checks with no console errors or uncaught page exceptions.
-- The browser suite covers all five views, add/edit/delete, reload persistence, sample-data handling, JSON export, and local-date overdue display.
-- `STATE.md` distinguishes browser-emulated checks from the remaining physical-device and cross-browser checks.
+- `npm test` passes 23/23 for the current source tree.
+- No full live sync, push, or deployment has been completed for this patch.
+- `STATE.md` distinguishes mock-based GitHub checks from unverified live GitHub and browser flows.
 
 ## Open decisions for the owner
 1. Where should durable records live (Phase 2)? Options to compare, not decide: Replit-hosted SQLite or JSON file behind a small server, or a free-tier hosted database. Browser-only storage does not satisfy the brief long term.

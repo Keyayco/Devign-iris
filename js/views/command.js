@@ -1,4 +1,4 @@
-import { h, button, badge, viewHead } from '../dom.js';
+import { h, button, badge, viewHead, fmtDateTime } from '../dom.js';
 import { renderEye, pulseEye } from '../iris-eye.js';
 import { runCommand } from '../commands.js';
 import { dataMode, MODE_LABELS } from '../selectors.js';
@@ -8,7 +8,6 @@ const MAX_TURNS = 20;
 const CHIPS = ['help', 'briefing', 'which projects need attention', 'what did we implement last'];
 const INTEGRATIONS = [
   ['Language model', 'No model is connected. Commands are matched locally.'],
-  ['GitHub', 'Repository inspection is not available.'],
   ['Replit deployments', 'Deployment status is not available.'],
   ['Agent sessions', 'Live agent activity is not monitored.']
 ];
@@ -37,6 +36,61 @@ function downloadExport(ctx) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+function githubConnection(ctx) {
+  const status = ctx.githubStatus || {};
+  const counts = status.counts || { found: 0, synced: 0, pending: 0, failed: 0 };
+  const progressState = status.progress || { completed: 0, total: 0 };
+  const isSyncing = status.phase === 'discovering' || status.phase === 'syncing';
+  const resetAt = Date.parse(status.rateLimitResetAt || '');
+  const waitingForQuota = Number.isFinite(resetAt) && resetAt > Date.now() &&
+    ((counts.pending || 0) > 0 || /rate limit/i.test(status.error || ''));
+  const statusText = {
+    idle: 'Not checked yet',
+    discovering: 'Discovering repositories',
+    syncing: 'Sync in progress',
+    ready: 'Up to date',
+    cached: 'Cached data',
+    partial: 'Partial sync',
+    error: 'Sync unavailable'
+  }[status.phase] || 'Public API';
+  const statusKind = status.phase === 'error' ? 'bad' :
+    status.phase === 'partial' ? 'warn' :
+      status.phase === 'ready' || status.phase === 'cached' ? 'cyan' : '';
+  const progress = isSyncing
+    ? h('progress', {
+      max: Math.max(progressState.total || 0, 1),
+      value: progressState.total ? progressState.completed : null,
+      'aria-label': 'GitHub sync progress'
+    })
+    : null;
+  const syncLabel = isSyncing && progressState.total
+    ? `${progressState.completed} of ${progressState.total} repositories processed`
+    : isSyncing ? 'Loading public repository list…'
+      : waitingForQuota ? `Queued until quota reset · ${fmtDateTime(status.rateLimitResetAt)}`
+        : '';
+
+  return h('div', { class: 'github-connection' },
+    h('div', { class: 'github-connection__head' },
+      h('div', null, h('strong', null, 'GitHub · Keyayco'), h('small', null, 'Public REST API · read-only · no token stored')),
+      badge(statusText, statusKind)),
+    h('div', { class: 'github-connection__actions' },
+      button(isSyncing ? 'Syncing…' : waitingForQuota ? 'Queued until reset' : 'Sync GitHub',
+        () => ctx.syncGitHub(), 'primary', { disabled: isSyncing || waitingForQuota })),
+    progress,
+    syncLabel ? h('p', { class: 'muted', 'aria-live': 'polite' }, syncLabel) : null,
+    h('p', { class: 'muted' }, `${counts.found || 0} public repositories found · ${counts.synced || 0} synced · ${counts.pending || 0} queued · ${counts.failed || 0} with sync issues`),
+    status.lastSyncAt ? h('p', { class: 'muted' }, `Last complete sync: ${fmtDateTime(status.lastSyncAt)}`) : null,
+    status.rateLimitRemaining != null
+      ? h('p', { class: 'muted' }, `GitHub API requests remaining: ${status.rateLimitRemaining}`)
+      : null,
+    status.error ? h('p', { class: 'note note--bad', role: 'status' }, status.error) : null,
+    status.notice ? h('p', { class: 'note note--warn', role: 'status' }, status.notice) : null,
+    status.cache?.error ? h('p', { class: 'note note--bad', role: 'status' }, status.cache.error) : null,
+    status.cache && !status.cache.available
+      ? h('p', { class: 'muted' }, 'Browser storage is unavailable; GitHub cache will last only for this session.')
+      : null);
+}
+
 export function renderCommand(ctx) {
   const state = ctx.store.getState();
   const status = ctx.store.getStatus();
@@ -59,6 +113,7 @@ export function renderCommand(ctx) {
   }
 
   root.append(h('div', { class: 'section' }, h('h2', null, 'Connections'),
+    githubConnection(ctx),
     h('ul', { class: 'status-list' }, INTEGRATIONS.map(([name, note]) => h('li', null, h('div', null, name, h('small', null, note)), badge('Not connected'))))));
 
   const hasSample = ctx.store.hasSample();

@@ -78,6 +78,7 @@ a { color: var(--cyan); }
   margin-bottom: var(--sp-4);
 }
 .note--bad { border-left-color: var(--bad); background: rgba(255, 107, 129, 0.08); }
+.note--warn { border-left-color: var(--warn); background: rgba(255, 179, 71, 0.08); }
 .empty { padding: var(--sp-5) 0; max-width: 34rem; }
 .empty h2 { margin-bottom: var(--sp-2); }
 .empty p { color: var(--text-muted); margin-bottom: var(--sp-4); }
@@ -139,6 +140,25 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
 .status-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .status-list li { display: flex; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); align-items: center; }
 .status-list small { display: block; color: var(--text-faint); font-size: var(--fs-xs); }
+
+.github-connection { padding: var(--sp-3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.github-connection__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.github-connection__head strong { display: block; }
+.github-connection__head small { display: block; margin-top: 2px; color: var(--text-faint); font-size: var(--fs-xs); }
+.github-connection__actions { margin-top: var(--sp-3); }
+.github-connection progress { display: block; width: 100%; height: 0.5rem; margin-top: var(--sp-3); accent-color: var(--cyan); }
+.github-connection > p { margin-top: var(--sp-2); overflow-wrap: anywhere; }
+
+.github-project { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.github-project__head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.github-project__head h3 { margin-right: auto; }
+.github-project__list, .github-project__warnings { margin-top: var(--sp-4); }
+.github-project__list h4, .github-project__warnings h4 { margin-bottom: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; }
+.github-project__list ul, .github-project__warnings ul { margin: 0; padding-left: 1.2rem; }
+.github-project__list li, .github-project__warnings li { margin: var(--sp-2) 0; overflow-wrap: anywhere; }
+.github-project__list small { display: block; margin-top: 2px; color: var(--text-faint); font-size: var(--fs-xs); }
+.github-project__warnings li { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); }
+.github-project__disclaimer { margin-top: var(--sp-3); color: var(--text-faint); font-size: var(--fs-xs); }
 
 .filter { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); font-size: var(--fs-sm); color: var(--text-muted); }
 .filter select { min-height: 2.25rem; padding: 0 var(--sp-2); color: var(--text); background: var(--bg-sunken); border: 1px solid var(--line-strong); border-radius: var(--r-md); font: inherit; }
