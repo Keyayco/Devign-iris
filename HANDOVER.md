@@ -1,63 +1,96 @@
-# HANDOVER: continuing Devign Iris in Replit
+HANDOVER: Devign Iris
 
-Written for an AI coding agent working through Replit on a phone or tablet. Read `RULES.md` and `STATE.md` first. They are short.
+Written for AI coding agents working on Devign Iris from a phone or tablet.
 
-## Situation
-- This patch starts from GitHub `main` baseline `6cfe5d2fcd9031fe7b50fb8570fd76b36d3e58b0`. It adds a public, read-only GitHub sync at the owner's explicit request; changes are local and have not been pushed or deployed.
-- GitHub data is kept separate in `project.github` and a dedicated localStorage cache key. The schema-v1 project records and manually entered notes are preserved.
-- Current source tests: `npm test` passes 23/23, including discovery/branch pagination, docs and missing files, duplicate prevention, manual-note preservation, API failures, empty repos, and quota pause/resume.
-- A bounded live browser sync of the final implementation on 2026-11-04 discovered 101 public non-fork repos; 12 had details read, five empty repos were skipped, 84 were queued, zero sync issues were reported, and 22 anonymous REST requests remained. The full sync was not completed; unit tests cover queuing and post-reset resume.
-- Earlier mobile-preview observations and physical-device/browser-engine limits remain in `STATE.md` and the older `LOGS.md` entries.
-- The product is dependency-free vanilla HTML/CSS/JS. `npm start` runs the repository's static server.
+Before making changes, read:
 
-## Run and verify
-1. Run `npm test` (Node 18+; no dependencies).
-2. Run `npm start`; open `http://localhost:8000`. The static server serves `index.html`, `css/`, and `js/`.
-3. Open Command → Connections to see connection state, counts, quota/queue notice, and manual sync. First open starts discovery when there is no fresh completed cache.
-4. Keep the app open for automatic resume after the public GitHub API quota resets. A later open also resumes queued work. No token is needed or accepted.
-5. Record only verification actually performed in `LOGS.md`. The checked-in `tests/smoke.py` requires Python Playwright; verify availability before claiming it ran.
+- "README.md"
+- "RULES.md"
+- "STATE.md"
+- "LOGS.md"
+- "FILE_MANIFEST.md"
+- "AGENT_HANDOVER_PROTOCOL.md"
 
-The unauthenticated REST quota is shared. One pass details at most 12 changed repositories, budgeting four REST requests per repo plus an eight-request reserve. The live snapshot had 96 non-empty and five empty repos, so a full first sync is expected to take about eight hourly quota windows total if the list is unchanged.
+Situation
 
-## Recommended next milestone
-Review the local patch package and test report. If approved, apply it to the intended project, repeat `npm test`, and perform a live sync after the public quota is available. Do not push or deploy without a separate explicit request.
+- The read-only GitHub integration has been merged into "main".
+- Pull request: "#1 — Add read-only GitHub integration" (https://github.com/Keyayco/Devign-iris/pull/1)
+- Feature commit: "8a671b9"
+- Merge commit: "4919f9e"
+- No deployment has been performed.
+- Full live GitHub synchronisation and automatic browser resume remain unverified.
+- GitHub data is kept separate in "project.github" and a dedicated localStorage cache key. Schema-v1 project records and manually entered notes are preserved.
+- The implementation uses dependency-free vanilla HTML, CSS and JavaScript.
+- "npm start" runs the static server.
 
-## Do not do without explicit approval
-- Add a database, backend, auth, framework, bundler, or TypeScript.
-- Call any AI model or store an API key anywhere.
-- Add another integration, shell access, or auto-deploy.
-- Start Phase 2 (server-backed memory). That needs a written trade-off comparison of low-cost options first (RULES.md, brief section 5).
-- Rewrite files that are not part of the task. Do not change the `devign-iris:v1` storage key or `schema` version without a migration.
+Important: The GitHub integration is already in "main". Do not reapply the old patch or attempt to recreate PR #1.
 
-## Files to inspect for common tasks
-| Task | Files |
-|---|---|
-| Add or change a record field | `js/schema.js` (FIELDS), the matching `js/views/*.js` detail list, `js/sample-data.js`, tests |
-| Add a local command | `js/commands.js`, `tests/run-tests.mjs`, HELP_LINES |
-| Change storage | `js/store.js` (storage is injected; keep it testable) |
-| Change GitHub API/cache behavior | `js/integrations/github.js`, `js/integrations/github-cache.js`, mocked tests |
-| Colours, spacing, type | `css/tokens.css` |
-| Layout breakpoints | `css/layout.css` (single breakpoint at 768px) |
-| Iris eye | `js/iris-eye.js`, `.eye-*` rules in `css/components.css` |
+Run and verify
 
-## Conventions the next agent must keep
-- Logic modules (`schema`, `store`, `selectors`, `commands`, `sample-data`) must not touch `document` or `window`.
-- Record text is rendered through `h()` text nodes. No `innerHTML` with user data.
-- Unavailable things are shown as unavailable ("Not connected", "Unknown", "Not verified").
-- Supply complete replacement files when practical. After each change run `npm test`, update `STATE.md`, `HANDOVER.md`, and `LOGS.md`, and keep `FILE_MANIFEST.md` accurate.
+1. Start from a fresh checkout of the current GitHub "main" branch.
+2. Run "npm test" (Node 18+; no dependencies).
+3. Run "npm start"; open "http://localhost:8000".
+4. Open Command → Connections to inspect connection state, counts, quota/queue notice and manual sync.
+5. Record only verification actually performed in "LOGS.md".
 
-## Completed milestone verification
-- `npm test` passes 23/23 for the current source tree.
-- No full live sync, push, or deployment has been completed for this patch.
-- `STATE.md` distinguishes mock-based GitHub checks from unverified live GitHub and browser flows.
+The unauthenticated REST quota is shared. One pass details at most 12 changed repositories, budgeting four REST requests per repository plus an eight-request reserve.
 
-## Open decisions for the owner
-1. Where should durable records live (Phase 2)? Options to compare, not decide: Replit-hosted SQLite or JSON file behind a small server, or a free-tier hosted database. Browser-only storage does not satisfy the brief long term.
-2. Should the repository keep `tests/smoke.py` (needs Playwright) or move browser tests elsewhere?
-3. Confirm the first real project list; the five names in the sample data are brief candidates, not confirmed active projects.
+The previous live snapshot discovered 101 public non-fork repositories; 12 had details read, five empty repositories were skipped, 84 were queued, and 22 anonymous REST requests remained. The full sync was not completed.
 
-## Getting files back to GitHub from a phone
-Not verified on a device. Options, safest first:
-1. Use Replit's Git pane to commit and push to the GitHub repo.
-2. In GitHub's mobile web UI, "Add file > Create new file" accepts paths with slashes (for example `js/views/tasks.js`) and creates folders. Paste contents per file. Slow but reliable.
-3. "Add file > Upload files" works for files in one folder at a time. GitHub does not unzip archives, so extract the ZIP first. Confirm each upload landed before moving on.
+Recommended next milestone
+
+- Verify the merged integration from a fresh "main" checkout.
+- Complete live synchronisation and verify automatic browser resume.
+- Review the current UI and identify the next owner-approved improvement.
+- Do not deploy without explicit approval.
+
+Do not do without explicit approval
+
+- Add a database, backend, authentication, framework, bundler or TypeScript.
+- Call any AI model or store an API key.
+- Add another integration, shell access or auto-deploy.
+- Start Phase 2 (server-backed memory). That needs a written trade-off comparison of low-cost options first.
+- Rewrite files outside the approved task.
+- Change the "devign-iris:v1" storage key or schema version without a migration.
+
+Files to inspect for common tasks
+
+Task| Files
+Add or change a record field| "js/schema.js", matching "js/views/*.js", "js/sample-data.js", tests
+Add a local command| "js/commands.js", "tests/run-tests.mjs", HELP_LINES
+Change storage| "js/store.js"
+Change GitHub API/cache behavior| "js/integrations/github.js", "js/integrations/github-cache.js", mocked tests
+Colours, spacing, typography| "css/tokens.css"
+Layout breakpoints| "css/layout.css"
+Iris eye| "js/iris-eye.js", ".eye-*" rules in "css/components.css"
+
+Conventions
+
+- Logic modules must not touch "document" or "window".
+- Record text is rendered through "h()" text nodes. Never use "innerHTML" with user data.
+- Show unavailable information honestly: "Not connected", "Unknown" or "Not verified".
+- Supply complete replacement files when practical.
+- After each approved change, run "npm test".
+- Update "STATE.md", "HANDOVER.md", "LOGS.md" and "FILE_MANIFEST.md" when relevant.
+- Follow `AGENT_HANDOVER_PROTOCOL.md when transferring work between agents.
+
+Verification status
+
+- GitHub integration merged into "main".
+- Original implementation tests passed 23/23.
+- Mock-based API checks passed.
+- Initial bounded live sync performed on 4 November 2026.
+- Full live sync and automatic browser resume remain unverified.
+- No deployment performed.
+
+Open decisions for the owner
+
+1. Where should durable records live (Phase 2)? Compare low-cost options before recommending a decision.
+2. Should "tests/smoke.py" remain (requires Python Playwright)?
+3. Confirm the first real project list. Sample projects are candidates, not confirmed active projects.
+
+Getting files back to GitHub from a phone
+
+Use GitHub's mobile web editor for small documentation changes.
+
+For larger changes, use a fresh checkout and a reviewed commit/PR workflow. Do not push from an outdated Replit workspace without first checking its branch and commit history.
