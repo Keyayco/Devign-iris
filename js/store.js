@@ -70,9 +70,94 @@ export function createStore(storage = null, clock = () => new Date()) {
     if (!res.ok) return res;
     const prev = state[collection][idx];
     const record = { ...prev, ...res.record, updatedAt: clock().toISOString() };
+    if (collection === 'projects' && prev.github && prev.name !== record.name) {
+      record.github = { ...prev.github, nameOverride: true };
+    }
     state[collection][idx] = record;
     save(); notify();
     return { ok: true, errors: {}, record };
+  }
+
+  /**
+   * Attach read-only GitHub metadata to project records without changing their
+   * manually entered fields. GitHub metadata is an optional additive property
+   * on schema v1 records; no schema migration or collection change is needed.
+   */
+  function syncGitHubProjects(repositories) {
+    const summary = { created: 0, updated: 0, matchedManual: 0, conflicts: 0 };
+    let changed = false;
+    const now = clock().toISOString();
+
+    for (const repo of repositories || []) {
+      if (!repo || repo.id == null || !repo.fullName || !repo.name) continue;
+      const fullName = String(repo.fullName).toLowerCase();
+      let project = state.projects.find((item) =>
+        item.github && (
+          String(item.github.repoId || item.github.id || '') === String(repo.id) ||
+          String(item.github.fullName || '').toLowerCase() === fullName
+        )
+      );
+      let matchedManual = false;
+      let identityConflict = false;
+
+      if (!project) {
+        const matches = state.projects
+          .filter((item) => !item.sample && !item.github &&
+            String(item.name || '').trim().toLowerCase() === String(repo.name).trim().toLowerCase())
+          .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+        if (matches.length) {
+          project = matches[0];
+          matchedManual = true;
+          identityConflict = matches.length > 1;
+          summary.matchedManual += 1;
+          if (identityConflict) summary.conflicts += 1;
+        }
+      }
+
+      if (!project) {
+        state.projects.push({
+          id: newId('projects'),
+          name: String(repo.name),
+          purpose: '',
+          state: 'unknown',
+          constraints: '',
+          lastImplementation: '',
+          blockers: '',
+          nextAction: '',
+          sample: false,
+          createdAt: now,
+          updatedAt: now,
+          github: { ...repo, repoId: repo.id, nameOverride: false, identityConflict: false, linkedAt: now }
+        });
+        summary.created += 1;
+        changed = true;
+        continue;
+      }
+
+      const previousGithub = project.github || null;
+      const nameOverride = previousGithub
+        ? previousGithub.nameOverride === true
+        : matchedManual || String(project.name) !== String(repo.name);
+      const nextGithub = {
+        ...repo,
+        repoId: repo.id,
+        nameOverride,
+        identityConflict: identityConflict || previousGithub?.identityConflict === true,
+        linkedAt: previousGithub?.linkedAt || now
+      };
+      const githubChanged = JSON.stringify(previousGithub) !== JSON.stringify(nextGithub);
+      const nameChanged = !nameOverride && project.name !== String(repo.name);
+      if (githubChanged || nameChanged) {
+        project.github = nextGithub;
+        if (nameChanged) project.name = String(repo.name);
+        project.updatedAt = now;
+        summary.updated += 1;
+        changed = true;
+      }
+    }
+
+    if (changed) { save(); notify(); }
+    return summary;
   }
 
   function remove(collection, id) {
@@ -136,6 +221,6 @@ export function createStore(storage = null, clock = () => new Date()) {
     getState: () => state,
     getStatus: () => status,
     subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
-    add, update, remove, setTaskDone, loadSample, clearSample, clearAll, hasSample, exportJSON
+    add, update, syncGitHubProjects, remove, setTaskDone, loadSample, clearSample, clearAll, hasSample, exportJSON
   };
 }

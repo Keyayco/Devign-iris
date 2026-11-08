@@ -9,6 +9,8 @@ import { renderProjects } from './views/projects.js';
 import { renderAgents } from './views/agents.js';
 import { renderActivity } from './views/activity.js';
 import { renderTasks } from './views/tasks.js';
+import { createGitHubCache } from './integrations/github-cache.js';
+import { createGitHubClient, shouldRefreshGitHub } from './integrations/github.js';
 
 const RENDERERS = { command: renderCommand, projects: renderProjects, agents: renderAgents, activity: renderActivity, tasks: renderTasks };
 
@@ -20,16 +22,54 @@ function safeStorage() {
   } catch (e) { return null; }
 }
 
-const store = createStore(safeStorage());
+const browserStorage = safeStorage();
+const store = createStore(browserStorage);
+const githubCache = createGitHubCache(browserStorage);
 const app = document.getElementById('app');
+let githubStatus;
+let githubClient;
+let githubResumeTimer = 0;
 
 const ctx = {
   store,
   navigate,
   rerender: () => render(),
   loadSample: () => store.loadSample(getSampleRecords()),
-  openProject: (id) => { openRow(id); navigate('projects'); }
+  openProject: (id) => { openRow(id); navigate('projects'); },
+  get githubStatus() { return githubStatus; },
+  syncGitHub: () => syncGitHub()
 };
+
+async function syncGitHub() {
+  const result = await githubClient.sync();
+  store.syncGitHubProjects(result.repositories);
+  githubStatus = githubClient.getStatus();
+  render();
+  scheduleGitHubResume();
+  return result;
+}
+
+function scheduleGitHubResume() {
+  if (githubResumeTimer) window.clearTimeout(githubResumeTimer);
+  githubResumeTimer = 0;
+  const snapshot = githubClient.getSnapshot();
+  const status = githubClient.getStatus();
+  const shouldResume = (snapshot.counts?.pending || 0) > 0 || /rate limit/i.test(snapshot.error || '');
+  const resetAt = Date.parse(snapshot.rateLimitResetAt || status.rateLimitResetAt || '');
+  if (!shouldResume || !Number.isFinite(resetAt)) return;
+  const delay = resetAt - Date.now() + 1500;
+  if (delay <= 0) return;
+  githubResumeTimer = window.setTimeout(() => {
+    githubResumeTimer = 0;
+    void syncGitHub();
+  }, Math.min(delay, 2_147_000_000));
+}
+
+githubClient = createGitHubClient({
+  cache: githubCache,
+  onStatus: (next) => { githubStatus = next; render(); }
+});
+githubStatus = githubClient.getStatus();
 
 function brandMark() {
   return s('svg', { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
@@ -67,4 +107,7 @@ function render() {
 
 store.subscribe(() => render());
 onRouteChange(() => { render(); window.scrollTo(0, 0); });
+store.syncGitHubProjects(githubClient.getSnapshot().repositories);
 render();
+scheduleGitHubResume();
+if (shouldRefreshGitHub(githubClient.getSnapshot())) void syncGitHub();

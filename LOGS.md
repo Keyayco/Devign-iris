@@ -2,6 +2,26 @@
 
 Chronological. Entries state what actually happened.
 
+## 2026-11-04 - Final review and verification
+- Continued from the local working copy after the workspace restarted; confirmed the patch remained uncommitted.
+- Reran `npm test`: 23/23 passed with Node 24.22.1. All JavaScript files passed `node --check`, and `git diff --check` passed.
+- Rechecked the static server: app, CSS, and both GitHub modules returned HTTP 200; `package.json` and a traversal probe returned HTTP 404.
+- Repeated the temporary headless Chromium 152 smoke using local mock/cache fixtures. Command connection controls rendered; Project details showed a GitHub description, recent commit, README link/excerpt, warning, and preserved manual note. No browser exceptions or render errors were observed.
+- Ran a bounded live sync through the final app against GitHub's public API. It discovered 101 public non-fork repositories; 12 had details read, five empty repos were recorded without detail calls, 84 were queued, zero sync issues were reported, and 22 requests remained. GitHub reported reset at `2026-11-04T09:01:56Z`. This verified the first live pass, not completion of the full account sync.
+- Built the changed-files-only patch package, applied it over a temporary clean export of the baseline commit, and reran `npm test` (23/23) and JavaScript syntax checks successfully. ZIP integrity validation passed.
+- The full account sync remains incomplete. No push or deployment was made.
+
+## 2026-11-03 - GitHub read-only integration patch
+- Verified the public repository baseline at `6cfe5d2fcd9031fe7b50fb8570fd76b36d3e58b0` and made changes only in a local working copy. The original Replit project was not available to edit through this conversation.
+- Added a browser-only public GitHub REST client and separate cache. It discovers public, non-fork owner repositories, reads metadata/branches/recent commits/project docs, upserts them into `project.github`, and preserves manual Iris fields and notes. No token, backend, dependency, GitHub write operation, or schema migration was added.
+- Added deterministic documentation warnings for explicit branch/revision mismatches and declared update dates more than 30 days behind the newest commit date. The UI explicitly says commits do not prove testing or deployment.
+- The GitHub connector's owner-repository read showed 100 public non-fork repos in the observed account snapshot, including five empty repos. An earlier browser experiment using the first unthrottled implementation exhausted the anonymous GitHub REST quota while reading details.
+- Changed the sync to skip empty repos, limit detail work to 12 repositories per pass, reserve eight REST requests, cap branch pagination at two pages, preserve cached data on errors, and queue/resume work at the reported quota reset. The final throttled implementation has not been verified with a full live owner sync.
+- Added mocked tests for paginated discovery/branches, document reads and missing files, cache behavior, duplicates, manual-note/name preservation, API errors, empty repositories, quota reserve/queue, and resume. `npm test` passed 23/23 with the final integration code.
+- Static HTTP checks returned 200 for `/`, `js/main.js`, both new integration modules, and `css/components.css`; `package.json` and a traversal probe returned 404. All JavaScript modules passed `node --check`, and `git diff --check` passed.
+- Temporary headless Chromium 152/CDP smoke with mocked/cache fixtures verified the Command connection panel/sync control and Project GitHub details (description, commit, doc link/excerpt, warning, and preserved manual note). No render error or browser exception was observed. This did not issue a live GitHub sync.
+- No commit, push, or deployment was made.
+
 ## 2026-10-29 - Replit import and baseline run
 - Imported the public GitHub repository `Keyayco/Devign-iris`, branch `main`, at revision `459c038`. Product files remain vanilla HTML, CSS, and JavaScript; the Replit artifact workflow uses Vite to serve the existing `index.html`.
 - Added `start` and `test` scripts to the Replit artifact package so the repository's documented commands work from the artifact directory. No product behavior or source modules were changed.
