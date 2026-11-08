@@ -42,7 +42,7 @@ Path| Purpose
 "tests/run-tests.mjs"| Automated test suite
 "tests/smoke.py"| Python Playwright smoke test
 
-Total: 34 tracked files once "AGENT_HANDOVER_PROTOCOL.md" has been added.
+Total: 34 tracked files.
 
 GitHub integration status
 
