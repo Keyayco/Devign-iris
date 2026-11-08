@@ -2,7 +2,7 @@ FILE_MANIFEST
 
 This manifest describes the tracked source tree for Devign Iris on GitHub "main".
 
-The read-only GitHub integration is merged. The inventory below reflects the current project structure, including the documentation file being added in this alignment pass.
+The read-only GitHub integration is merged. The inventory below reflects the current tracked project structure on GitHub main.
 
 Source tree
 
