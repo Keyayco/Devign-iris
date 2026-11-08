@@ -2,6 +2,17 @@
 
 Chronological. Entries state what actually happened.
 
+2026-11-08 - GitHub integration merged and documentation aligned
+
+- Merged PR #1, "Add read-only GitHub integration", into "main".
+- Feature commit: "8a671b9".
+- Merge commit: "4919f9e".
+- Updated "STATE.md" to reflect the merged status and remaining verification.
+- Updated "HANDOVER.md" to remove obsolete local-patch instructions and establish "main" as the source of truth.
+- No deployment performed.
+- Full live GitHub synchronisation and automatic browser resume remain unverified.
+- Documentation alignment is ongoing. "FILE_MANIFEST.md", "README.md", "RULES.md" and "AGENT_HANDOVER_PROTOCOL.md" remain to be reviewed or updated.
+
 ## 2026-11-04 - Final review and verification
 - Continued from the local working copy after the workspace restarted; confirmed the patch remained uncommitted.
 - Reran `npm test`: 23/23 passed with Node 24.22.1. All JavaScript files passed `node --check`, and `git diff --check` passed.
