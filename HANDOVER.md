@@ -72,7 +72,7 @@ Conventions
 - Supply complete replacement files when practical.
 - After each approved change, run "npm test".
 - Update "STATE.md", "HANDOVER.md", "LOGS.md" and "FILE_MANIFEST.md" when relevant.
-- Follow `AGENT_HANDOVER_PROTOCOL.md' when transferring work between agents.
+- Follow `AGENT_HANDOVER_PROTOCOL.md` when transferring work between agents.
 
 Verification status
 
