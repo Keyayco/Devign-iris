@@ -77,8 +77,11 @@ tests/smoke.py          Browser smoke test (50 checks, optional)
 
 ## Documentation
 
-- `RULES.md` persistent rules and approval requirements
-- `STATE.md` what exists, what was verified, known defects
-- `HANDOVER.md` how to continue in Replit with an AI agent
-- `LOGS.md` chronological record
-- `FILE_MANIFEST.md` every file in this package
+- "RULES.md" — persistent development rules and owner approval requirements
+- "STATE.md" — current implementation, verification status and known limitations
+- "HANDOVER.md" — current project handover and next steps
+- "LOGS.md" — chronological record of completed work and verification
+- "FILE_MANIFEST.md" — tracked source-file inventory
+- "AGENT_HANDOVER_PROTOCOL.md" — reusable protocol for transferring work between AI agents
+
+All coding agents must read the project documentation before making changes and follow "AGENT_HANDOVER_PROTOCOL.md" when handing work to another agent.
