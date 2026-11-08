@@ -38,17 +38,3 @@ Source of truth: the Devign Iris Master Project Brief. These rules are persisten
 - Patch packages include `UPDATE_MANIFEST.md` (id, base revision if known, added/modified/deleted, install paths, tests, rollback, limitations). Never invent a commit hash.
 - Update `STATE.md`, `HANDOVER.md`, `LOGS.md` before declaring a milestone ready to transfer.
 
-Agent handover protocol
-
-- Every AI coding agent must read "AGENT_HANDOVER_PROTOCOL.md" before accepting or transferring implementation work.
-- Every handover must describe the actual repository, branch, and base commit. Never assume an agent's local workspace is current.
-- Record the exact files changed, work completed, tests run and their results, and anything not verified.
-- Clearly separate completed work from proposed work, assumptions, known limitations, and outstanding decisions.
-- The next agent must inspect the current GitHub "main" branch and relevant project documentation before changing code.
-- Never blindly reapply an old patch, overwrite newer work, or assume a previous agent's workspace is authoritative.
-- Preserve owner approval boundaries. A handover does not authorise additional scope, deployment, destructive changes, or architecture changes.
-- Update "STATE.md", "HANDOVER.md", "LOGS.md", and "FILE_MANIFEST.md" when the work materially changes project state.
-- The outgoing agent must give the incoming agent one clear first action and identify any blockers.
-- If work cannot be verified, label it Not verified rather than implying completion.
-
-The GitHub repository is the source of truth. Agent conversations and local workspaces are not.
