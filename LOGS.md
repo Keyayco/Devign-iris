@@ -11,7 +11,7 @@ Chronological. Entries state what actually happened.
 - Updated "HANDOVER.md" to remove obsolete local-patch instructions and establish "main" as the source of truth.
 - No deployment performed.
 - Full live GitHub synchronisation and automatic browser resume remain unverified.
-- Documentation alignment is ongoing. "FILE_MANIFEST.md", "README.md", "RULES.md" and "AGENT_HANDOVER_PROTOCOL.md" remain to be reviewed or updated.
+- Completed documentation alignment: README, RULES, HANDOVER, FILE_MANIFEST and AGENT_HANDOVER_PROTOCOL reviewed and aligned.
 
 ## 2026-11-04 - Final review and verification
 - Continued from the local working copy after the workspace restarted; confirmed the patch remained uncommitted.
