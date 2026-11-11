@@ -113,6 +113,54 @@ export function eligibleRepositories(repositories, owner = GITHUB_OWNER) {
   );
 }
 
+export function parseGitHubRepositoryUrl(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 2048) {
+    return { ok: false, error: 'Enter a GitHub repository URL.' };
+  }
+  let url;
+  try { url = new URL(text); } catch {
+    return { ok: false, error: 'Enter a valid https://github.com/owner/repository URL.' };
+  }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com' ||
+      url.username || url.password || url.port || url.search || url.hash) {
+    return { ok: false, error: 'Use a direct HTTPS GitHub repository URL without query or fragment.' };
+  }
+  const match = url.pathname.match(/^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/);
+  if (!match || ['.', '..'].includes(match[1]) || ['.', '..'].includes(match[2])) {
+    return { ok: false, error: 'Use a direct repository URL, not an issue, file, or profile URL.' };
+  }
+  const owner = match[1];
+  const name = match[2];
+  return {
+    ok: true,
+    owner,
+    name,
+    fullName: `${owner}/${name}`,
+    url: `https://github.com/${owner}/${name}`
+  };
+}
+
+function normalizeRepository(repo) {
+  const fullName = String(repo?.fullName || repo?.full_name || '');
+  const owner = String(repo?.owner?.login || repo?.owner || fullName.split('/')?.[0] || '');
+  const name = String(repo?.name || fullName.split('/')?.[1] || '');
+  return {
+    id: repo?.id,
+    owner,
+    name,
+    fullName,
+    description: String(repo?.description || ''),
+    url: String(repo?.html_url || repo?.url || (fullName ? `https://github.com/${fullName}` : '')),
+    defaultBranch: String(repo?.default_branch || repo?.defaultBranch || ''),
+    pushedAt: String(repo?.pushed_at || repo?.pushedAt || ''),
+    size: Number(repo?.size) || 0,
+    language: String(repo?.language || ''),
+    isPublic: repo?.private === false || repo?.isPublic === true,
+    fork: repo?.fork === true
+  };
+}
+
 function documentPriority(path) {
   const basename = path.split('/').pop().toUpperCase();
   const exact = DOC_PRIORITY.indexOf(basename);
@@ -239,6 +287,7 @@ function minimalRepository(repo, now) {
     id: repo.id,
     fullName: repo.full_name,
     name: repo.name,
+    isPublic: repo.private !== true,
     description: repo.description || '',
     url: repo.html_url || '',
     defaultBranch: repo.default_branch || '',
@@ -310,12 +359,29 @@ export function shouldRefreshGitHub(snapshot, now = new Date()) {
   const lastAttempt = Date.parse(snapshot?.lastAttemptAt || '');
   const lastSync = Date.parse(snapshot?.lastSyncAt || '');
   const rateLimitReset = Date.parse(snapshot?.rateLimitResetAt || '');
-  const pending = (snapshot?.counts?.pending || 0) > 0;
-  const rateLimitError = /rate limit/i.test(snapshot?.error || '');
+  const tracked = Array.isArray(snapshot?.trackedRepositories) ? snapshot.trackedRepositories : [];
+  if (!tracked.length) return false;
+  const cached = Array.isArray(snapshot?.repositories) ? snapshot.repositories : [];
+  const pending = tracked.some((item) => {
+    const profile = cached.find((repo) =>
+      String(repo.id) === String(item.id) ||
+      String(repo.fullName || '').toLowerCase() === String(item.fullName || '').toLowerCase()
+    );
+    return !profile || profile.syncState === 'queued';
+  });
+  const staleTracked = tracked.some((item) => {
+    const profile = cached.find((repo) =>
+      String(repo.id) === String(item.id) ||
+      String(repo.fullName || '').toLowerCase() === String(item.fullName || '').toLowerCase()
+    );
+    const syncedAt = Date.parse(profile?.syncedAt || '');
+    return !Number.isFinite(syncedAt) || current - syncedAt >= GITHUB_STALE_AFTER_MS;
+  });
+  const rateLimitError = pending && /rate limit/i.test(snapshot?.error || '');
   if ((pending || rateLimitError) && Number.isFinite(rateLimitReset) && current < rateLimitReset) return false;
   if ((pending || rateLimitError) && Number.isFinite(rateLimitReset) && current >= rateLimitReset) return true;
   if (Number.isFinite(lastAttempt) && current - lastAttempt < GITHUB_RETRY_AFTER_MS) return false;
-  if (pending) return true;
+  if (pending || staleTracked) return true;
   if (!Number.isFinite(lastSync)) return true;
   return current - lastSync >= GITHUB_STALE_AFTER_MS;
 }
@@ -328,22 +394,81 @@ export function createGitHubClient({
   onStatus = () => {}
 } = {}) {
   let snapshot = cache?.getSnapshot?.() || {
-    lastAttemptAt: '', lastSyncAt: '', repositories: [], counts: { found: 0, synced: 0, pending: 0, failed: 0 }, error: ''
+    lastAttemptAt: '', lastSyncAt: '', trackedRepositories: [], repositories: [],
+    counts: { found: 0, synced: 0, pending: 0, failed: 0 }, error: ''
+  };
+  snapshot = {
+    ...snapshot,
+    trackedRepositories: Array.isArray(snapshot.trackedRepositories) ? snapshot.trackedRepositories : [],
+    repositories: Array.isArray(snapshot.repositories) ? snapshot.repositories : []
   };
   let running = null;
+  let requestRunning = false;
+  const repoMatches = (a, b) =>
+    String(a?.id ?? '') === String(b?.id ?? '') ||
+    (!!a?.fullName && String(a.fullName).toLowerCase() === String(b?.fullName || '').toLowerCase());
+
+  function cachedProfile(repo) {
+    return snapshot.repositories.find((item) => repoMatches(item, repo)) || null;
+  }
+
+  function toApiRepository(repo) {
+    const tracked = normalizeRepository(repo);
+    return {
+      id: tracked.id,
+      name: tracked.name,
+      full_name: tracked.fullName,
+      owner: { login: tracked.owner },
+      private: !tracked.isPublic,
+      fork: tracked.fork,
+      description: tracked.description,
+      html_url: tracked.url,
+      default_branch: tracked.defaultBranch,
+      pushed_at: tracked.pushedAt,
+      size: tracked.size,
+      language: tracked.language
+    };
+  }
+
+  function profileForTracked(repo) {
+    const apiRepo = toApiRepository(repo);
+    const prior = cachedProfile(repo);
+    return {
+      ...minimalRepository(apiRepo, isoNow(clock)),
+      ...(prior || {}),
+      id: apiRepo.id,
+      fullName: apiRepo.full_name,
+      name: apiRepo.name,
+      description: apiRepo.description || prior?.description || '',
+      url: apiRepo.html_url || prior?.url || '',
+      defaultBranch: apiRepo.default_branch || prior?.defaultBranch || '',
+      pushedAt: apiRepo.pushed_at || prior?.pushedAt || '',
+      size: apiRepo.size || prior?.size || 0,
+      language: apiRepo.language || prior?.language || '',
+      syncState: prior?.syncState || 'queued'
+    };
+  }
+
+  function summarizeTracked(repositories = snapshot.trackedRepositories) {
+    const profiles = repositories.map((repo) => profileForTracked(repo));
+    return {
+      found: profiles.length,
+      synced: profiles.filter((repo) => repo.syncState === 'complete' || repo.syncState === 'empty').length,
+      pending: profiles.filter((repo) => repo.syncState === 'queued').length,
+      failed: profiles.filter((repo) => repo.syncState === 'error').length
+    };
+  }
+
   let status = {
-    phase: snapshot.lastSyncAt ? 'cached' : 'idle',
+    phase: snapshot.trackedRepositories.length && snapshot.lastSyncAt ? 'cached' : 'idle',
     lastAttemptAt: snapshot.lastAttemptAt || '',
     lastSyncAt: snapshot.lastSyncAt || '',
-    counts: {
-      found: snapshot.counts?.found || 0,
-      synced: snapshot.counts?.synced || 0,
-      pending: snapshot.counts?.pending || 0,
-      failed: snapshot.counts?.failed || 0
-    },
-    progress: { completed: 0, total: snapshot.counts?.found || 0 },
-    error: snapshot.error || '',
-    notice: snapshot.notice || '',
+    counts: summarizeTracked(),
+    trackedCount: snapshot.trackedRepositories.length,
+    cachedCount: snapshot.repositories.length,
+    progress: { completed: 0, total: snapshot.trackedRepositories.length },
+    error: snapshot.trackedRepositories.length ? snapshot.error || '' : '',
+    notice: snapshot.trackedRepositories.length ? snapshot.notice || '' : '',
     rateLimitRemaining: null,
     rateLimitResetAt: snapshot.rateLimitResetAt || '',
     cache: cache?.getStorageStatus?.() || { available: false, error: '' }
@@ -352,6 +477,9 @@ export function createGitHubClient({
   function notify() {
     status = {
       ...status,
+      counts: status.phase === 'syncing' ? status.counts : summarizeTracked(),
+      trackedCount: snapshot.trackedRepositories.length,
+      cachedCount: snapshot.repositories.length,
       lastAttemptAt: snapshot.lastAttemptAt || '',
       lastSyncAt: snapshot.lastSyncAt || '',
       cache: cache?.getStorageStatus?.() || status.cache
@@ -374,8 +502,10 @@ export function createGitHubClient({
     const remainingText = header(response.headers, 'x-ratelimit-remaining');
     if (remainingText !== '') {
       const remaining = Number(remainingText);
-      status.rateLimitRemaining = status.rateLimitRemaining == null
+      const resource = header(response.headers, 'x-ratelimit-resource') || 'core';
+      status.rateLimitRemaining = status.rateLimitResource !== resource || status.rateLimitRemaining == null
         ? remaining : Math.min(status.rateLimitRemaining, remaining);
+      status.rateLimitResource = resource;
     }
     status.rateLimitResetAt = rateReset(response.headers) || status.rateLimitResetAt;
 
@@ -515,72 +645,188 @@ export function createGitHubClient({
   function getStatus() {
     return {
       ...status,
-      counts: { ...status.counts },
+      counts: status.phase === 'syncing' ? { ...status.counts } : summarizeTracked(),
+      trackedCount: snapshot.trackedRepositories.length,
+      cachedCount: snapshot.repositories.length,
       progress: { ...status.progress },
       cache: { ...status.cache }
     };
   }
 
+  function getTrackedRepositories() {
+    return JSON.parse(JSON.stringify(snapshot.trackedRepositories));
+  }
+
+  function getTrackedProfiles() {
+    return snapshot.trackedRepositories.map((repo) => profileForTracked(repo));
+  }
+
+  function getCachedRepositories() {
+    return JSON.parse(JSON.stringify(snapshot.repositories));
+  }
+
+  async function searchRepositories(query) {
+    const term = String(query || '').trim();
+    if (!term) return { ok: false, repositories: [], error: 'Enter a repository name to search.' };
+    if (term.length > 100) return { ok: false, repositories: [], error: 'Search terms must be 100 characters or fewer.' };
+    if (running || requestRunning) return { ok: false, repositories: [], error: 'Wait for the current GitHub request to finish.' };
+    requestRunning = true;
+    status.rateLimitRemaining = null;
+    status.rateLimitResource = '';
+    try {
+      const q = `user:${owner} in:name ${term}`;
+      const url = buildPageUrl(`/search/repositories?q=${encodeURIComponent(q)}&per_page=100&sort=full_name`);
+      const { data } = await request(url);
+      if (!Array.isArray(data?.items)) throw new Error('GitHub returned an unexpected repository search response.');
+      const repositories = eligibleRepositories(data.items, owner).map(normalizeRepository);
+      return { ok: true, repositories, totalCount: Number(data.total_count) || repositories.length };
+    } catch (error) {
+      return { ok: false, repositories: [], error: formatApiError(error) };
+    } finally {
+      requestRunning = false;
+      notify();
+    }
+  }
+
+  async function lookupRepository(value) {
+    const parsed = parseGitHubRepositoryUrl(value);
+    if (!parsed.ok) return parsed;
+    if (running || requestRunning) return { ok: false, error: 'Wait for the current GitHub request to finish.' };
+    requestRunning = true;
+    status.rateLimitRemaining = null;
+    status.rateLimitResource = '';
+    try {
+      const path = `/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.name)}`;
+      const { data } = await request(buildPageUrl(path));
+      if (!data || data.private === true || data.id == null) {
+        return { ok: false, error: 'Only public GitHub repositories can be tracked.' };
+      }
+      const repository = normalizeRepository(data);
+      if (!repository.fullName || !repository.url) {
+        return { ok: false, error: 'GitHub did not return a valid repository record.' };
+      }
+      return { ok: true, repository };
+    } catch (error) {
+      const message = error?.status === 404
+        ? 'Repository not found or not public.'
+        : formatApiError(error);
+      return { ok: false, error: message };
+    } finally {
+      requestRunning = false;
+      notify();
+    }
+  }
+
+  function trackRepository(value) {
+    if (running || requestRunning) return { ok: false, error: 'Wait for the current GitHub request to finish.' };
+    const repository = normalizeRepository(value);
+    if (repository.id == null || !repository.owner || !repository.name || !repository.fullName ||
+        !repository.isPublic || !repository.url) {
+      return { ok: false, error: 'Only a verified public GitHub repository can be tracked.' };
+    }
+    const existing = snapshot.trackedRepositories.find((item) => repoMatches(item, repository));
+    if (existing) return { ok: true, duplicate: true, repository: existing };
+    const tracked = { ...repository, trackedAt: isoNow(clock) };
+    const hadTrackedRepositories = snapshot.trackedRepositories.length > 0;
+    snapshot = {
+      ...snapshot,
+      trackedRepositories: [...snapshot.trackedRepositories, tracked],
+      ...(hadTrackedRepositories ? {} : { error: '', notice: '' })
+    };
+    snapshot.counts = summarizeTracked();
+    cache?.setSnapshot?.(snapshot);
+    if (!hadTrackedRepositories) {
+      status.error = '';
+      status.notice = '';
+    }
+    status.phase = snapshot.lastSyncAt ? 'cached' : 'idle';
+    status.counts = summarizeTracked();
+    status.progress = { completed: 0, total: snapshot.trackedRepositories.length };
+    notify();
+    return { ok: true, duplicate: false, repository: tracked };
+  }
+
+  function untrackRepository(identity) {
+    if (running || requestRunning) return false;
+    const key = typeof identity === 'object' && identity
+      ? identity
+      : { id: identity, fullName: String(identity || '') };
+    const previous = snapshot.trackedRepositories.length;
+    const trackedRepositories = snapshot.trackedRepositories.filter((item) => !repoMatches(item, key));
+    if (trackedRepositories.length === previous) return false;
+    snapshot = { ...snapshot, trackedRepositories, counts: summarizeTracked(trackedRepositories) };
+    cache?.setSnapshot?.(snapshot);
+    status.phase = trackedRepositories.length && snapshot.lastSyncAt ? 'cached' : 'idle';
+    status.counts = summarizeTracked();
+    status.progress = { completed: 0, total: trackedRepositories.length };
+    if (!trackedRepositories.length) {
+      status.error = '';
+      status.notice = '';
+    }
+    notify();
+    return true;
+  }
+
   async function runSync() {
     const attemptedAt = isoNow(clock);
+    const selected = snapshot.trackedRepositories.slice();
+    if (!selected.length) {
+      status = {
+        ...status,
+        phase: 'idle',
+        counts: { found: 0, synced: 0, pending: 0, failed: 0 },
+        progress: { completed: 0, total: 0 },
+        error: '',
+        notice: 'Track a repository before syncing.'
+      };
+      notify();
+      return { ok: true, repositories: [], status: getStatus() };
+    }
+
     const resetAt = Date.parse(snapshot.rateLimitResetAt || '');
     const nowTime = new Date(attemptedAt).getTime();
-    const rateLimitedDiscovery = /rate limit/i.test(snapshot.error || '');
-    if (((snapshot.counts?.pending || 0) > 0 || rateLimitedDiscovery) &&
+    const hasQueuedTracked = selected.some((repo) => profileForTracked(repo).syncState === 'queued');
+    if (hasQueuedTracked &&
         Number.isFinite(resetAt) && nowTime < resetAt) {
       const notice = `Sync is paused until GitHub's public API quota resets at ${snapshot.rateLimitResetAt}.`;
       status = {
         ...status,
         phase: 'partial',
-        counts: { ...snapshot.counts },
-        error: snapshot.error || '',
+        counts: summarizeTracked(),
+        progress: { completed: 0, total: selected.length },
+        error: '',
         notice
       };
       notify();
-      return { ok: false, repositories: getSnapshot().repositories, status: getStatus() };
+      return { ok: false, repositories: getTrackedProfiles(), status: getStatus() };
     }
 
     snapshot = { ...snapshot, lastAttemptAt: attemptedAt, error: '', notice: '' };
     status = {
       ...status,
-      phase: 'discovering',
-      counts: { found: 0, synced: 0, pending: 0, failed: 0 },
-      progress: { completed: 0, total: 0 },
+      phase: 'syncing',
+      counts: { found: selected.length, synced: 0, pending: 0, failed: 0 },
+      progress: { completed: 0, total: selected.length },
       error: '',
       notice: '',
       rateLimitRemaining: null,
-      rateLimitResetAt: snapshot.rateLimitResetAt || ''
+      rateLimitResource: '',
+      rateLimitResetAt: Number.isFinite(resetAt) && resetAt > nowTime ? snapshot.rateLimitResetAt : ''
     };
     cache?.setSnapshot?.(snapshot);
     notify();
 
     try {
-      const ownerUrl = buildPageUrl(`/users/${encodeURIComponent(owner)}/repos?type=owner&sort=pushed&per_page=${PER_PAGE}&page=1`);
-      const discovery = await fetchPages(ownerUrl);
-      if (!discovery.items.length && !discovery.complete) throw new Error(discovery.error || 'Repository discovery did not complete.');
-      const repos = eligibleRepositories(discovery.items, owner);
-      const oldById = new Map((snapshot.repositories || []).map((item) => [String(item.id), item]));
-      const oldByName = new Map((snapshot.repositories || []).map((item) => [String(item.fullName || '').toLowerCase(), item]));
       const repoProfiles = [];
       let synced = 0;
       let pending = 0;
-      let failed = discovery.complete ? 0 : 1;
+      let failed = 0;
       let detailedThisRun = 0;
       let pauseDetails = false;
-      const commonWarnings = [];
-      if (!discovery.complete && discovery.error) commonWarnings.push(discovery.error);
-
-      status = {
-        ...status,
-        phase: 'syncing',
-        counts: { found: repos.length, synced: 0, pending: 0, failed },
-        progress: { completed: 0, total: repos.length }
-      };
-      notify();
-
-      for (let i = 0; i < repos.length; i += 1) {
-        const repo = repos[i];
-        const prior = oldById.get(String(repo.id)) || oldByName.get(String(repo.full_name || '').toLowerCase());
+      for (let i = 0; i < selected.length; i += 1) {
+        const tracked = selected[i];
+        const repo = toApiRepository(tracked);
+        const prior = cachedProfile(tracked);
         let profile;
 
         if (isEmptyRepository(repo)) {
@@ -640,39 +886,30 @@ export function createGitHubClient({
         repoProfiles.push(profile);
         status = {
           ...status,
-          counts: { found: repos.length, synced, pending, failed },
-          progress: { completed: i + 1, total: repos.length }
+          counts: { found: selected.length, synced, pending, failed },
+          progress: { completed: i + 1, total: selected.length }
         };
         notify();
       }
 
-      const discoveredIds = new Set(repos.map((repo) => String(repo.id)));
-      if (discovery.complete) {
-        for (const old of snapshot.repositories || []) {
-          if (!discoveredIds.has(String(old.id))) repoProfiles.push({ ...old, availableInOwnerList: false });
-        }
-      } else {
-        for (const old of snapshot.repositories || []) {
-          if (!repoProfiles.some((item) => String(item.id) === String(old.id))) repoProfiles.push(old);
-        }
-      }
-
-      const complete = discovery.complete && pending === 0 && failed === 0;
+      const complete = pending === 0 && failed === 0;
       const error = complete ? '' :
-        [!discovery.complete ? discovery.error : '', ...repoProfiles.filter((item) => item.syncState === 'error').map((item) => item.syncError)]
+        repoProfiles.filter((item) => item.syncState === 'error').map((item) => item.syncError)
           .filter(Boolean).slice(0, 4).join(' ');
       const pauseUntil = pending > 0 ? status.rateLimitResetAt || '' : '';
       const notice = pending > 0
         ? pauseUntil
-          ? `${pending} repositories are queued. GitHub's public API quota resets at ${pauseUntil}; sync will resume then.`
-          : `${pending} repositories are queued for a later sync.`
+          ? `${pending} tracked repositories are queued. GitHub's public API quota resets at ${pauseUntil}; sync will resume then.`
+          : `${pending} tracked repositories are queued for a later sync.`
         : '';
+      const merged = new Map(snapshot.repositories.map((repo) => [String(repo.id), repo]));
+      for (const profile of repoProfiles) merged.set(String(profile.id), profile);
       snapshot = {
         ...snapshot,
         lastAttemptAt: attemptedAt,
         lastSyncAt: complete ? isoNow(clock) : snapshot.lastSyncAt || '',
-        repositories: repoProfiles.sort((a, b) => String(a.fullName).localeCompare(String(b.fullName))),
-        counts: { found: repos.length, synced, pending, failed },
+        repositories: [...merged.values()].sort((a, b) => String(a.fullName).localeCompare(String(b.fullName))),
+        counts: { found: selected.length, synced, pending, failed },
         error,
         notice,
         rateLimitResetAt: pauseUntil
@@ -681,14 +918,14 @@ export function createGitHubClient({
       status = {
         ...status,
         phase: complete ? 'ready' : 'partial',
-        counts: { ...snapshot.counts },
-        progress: { completed: repos.length, total: repos.length },
+        counts: summarizeTracked(),
+        progress: { completed: selected.length, total: selected.length },
         error,
         notice,
         rateLimitResetAt: snapshot.rateLimitResetAt
       };
       notify();
-      return { ok: complete, repositories: getSnapshot().repositories, status: getStatus(), warnings: commonWarnings };
+      return { ok: complete, repositories: getTrackedProfiles(), status: getStatus() };
     } catch (error) {
       const message = formatApiError(error);
       snapshot = {
@@ -697,27 +934,39 @@ export function createGitHubClient({
         error: message,
         rateLimitResetAt: error?.resetAt || snapshot.rateLimitResetAt || ''
       };
+      snapshot.counts = summarizeTracked();
       cache?.setSnapshot?.(snapshot);
       status = {
         ...status,
         phase: 'error',
-        counts: { ...snapshot.counts },
+        counts: summarizeTracked(),
         progress: { completed: 0, total: 0 },
         error: message,
         notice: snapshot.notice || '',
         rateLimitResetAt: error?.resetAt || status.rateLimitResetAt
       };
       notify();
-      return { ok: false, repositories: getSnapshot().repositories, status: getStatus(), error: message };
+      return { ok: false, repositories: getTrackedProfiles(), status: getStatus(), error: message };
     }
   }
 
   function sync() {
     if (!running) {
+      if (requestRunning) {
+        return Promise.resolve({
+          ok: false,
+          repositories: getTrackedProfiles(),
+          status: getStatus(),
+          error: 'Wait for the current GitHub request to finish.'
+        });
+      }
       running = runSync().finally(() => { running = null; });
     }
     return running;
   }
 
-  return { getSnapshot, getStatus, sync };
+  return {
+    getSnapshot, getStatus, getTrackedRepositories, getTrackedProfiles, getCachedRepositories,
+    searchRepositories, lookupRepository, trackRepository, untrackRepository, sync
+  };
 }

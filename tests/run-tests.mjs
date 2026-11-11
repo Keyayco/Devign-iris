@@ -5,7 +5,9 @@ import { createStore, STORAGE_KEY } from '../js/store.js';
 import { getSampleRecords } from '../js/sample-data.js';
 import { runCommand } from '../js/commands.js';
 import { dataMode, attentionReasons, todayISO, isOverdue } from '../js/selectors.js';
-import { createGitHubClient, eligibleRepositories, shouldRefreshGitHub } from '../js/integrations/github.js';
+import {
+  createGitHubClient, eligibleRepositories, parseGitHubRepositoryUrl, shouldRefreshGitHub
+} from '../js/integrations/github.js';
 import { createGitHubCache, GITHUB_CACHE_KEY } from '../js/integrations/github-cache.js';
 
 const tests = [];
@@ -17,6 +19,13 @@ const memStorage = (seed = {}) => {
 const NOW = new Date('2026-10-12T10:00:00Z');
 const jsonResponse = (body, status = 200, headers = {}) =>
   new Response(body == null ? null : JSON.stringify(body), { status, headers });
+const githubRepo = (id, name, overrides = {}) => ({
+  id, name, full_name: `Keyayco/${name}`,
+  owner: { login: 'Keyayco' }, private: false, fork: false,
+  description: `${name} description`, html_url: `https://github.com/Keyayco/${name}`,
+  default_branch: 'main', pushed_at: '2026-11-02T00:00:00Z', size: 10, language: 'JavaScript',
+  ...overrides
+});
 test('validate: required, enum, date, project reference', () => {
   assert.equal(validate('projects', { name: '' }).ok, false);
   assert.equal(validate('projects', { name: 'X', state: 'bogus' }).errors.state !== undefined, true);
@@ -123,7 +132,7 @@ test('selectors: overdue uses local date and excludes due-today, future, complet
   }
 });
 
-test('GitHub discovery keeps only public, non-fork repositories owned by the configured account', () => {
+test('GitHub name-search eligibility keeps only public, non-fork repositories owned by the configured account', () => {
   const repos = [
     { full_name: 'Keyayco/public', owner: { login: 'Keyayco' }, private: false, fork: false },
     { full_name: 'Keyayco/fork', owner: { login: 'Keyayco' }, private: false, fork: true },
@@ -133,7 +142,233 @@ test('GitHub discovery keeps only public, non-fork repositories owned by the con
   assert.deepEqual(eligibleRepositories(repos).map((repo) => repo.full_name), ['Keyayco/public']);
 });
 
-test('GitHub sync paginates discovery and branches, reads docs/commits, and flags objective doc conflicts', async () => {
+test('GitHub repository URL validation accepts direct HTTPS repos and rejects unsafe or non-repository URLs', () => {
+  const valid = parseGitHubRepositoryUrl('https://github.com/Keyayco/Devign-iris.git/');
+  assert.equal(valid.ok, true);
+  assert.equal(valid.fullName, 'Keyayco/Devign-iris');
+  assert.equal(valid.url, 'https://github.com/Keyayco/Devign-iris');
+  for (const value of [
+    'http://github.com/Keyayco/iris',
+    'https://github.com.evil.example/Keyayco/iris',
+    'https://github.com/Keyayco/iris/issues/1',
+    'https://github.com/Keyayco/iris?tab=readme',
+    'https://user:pass@github.com/Keyayco/iris',
+    'not a URL'
+  ]) assert.equal(parseGitHubRepositoryUrl(value).ok, false, value);
+});
+
+test('legacy cache stays intact but cached repositories are not scanned or tracked on startup', async () => {
+  const storage = memStorage();
+  const legacyRepos = Array.from({ length: 101 }, (_, i) => ({
+    id: 2000 + i, fullName: `Keyayco/old-${i}`, name: `old-${i}`,
+    syncState: i < 12 ? 'complete' : 'queued',
+    description: `cached ${i}`, docs: [{ path: 'README.md', excerpt: `kept ${i}` }]
+  }));
+  const cache = createGitHubCache(storage);
+  cache.setSnapshot({
+    lastSyncAt: '2026-11-04T08:00:00Z',
+    repositories: legacyRepos,
+    counts: { found: 101, synced: 12, pending: 84, failed: 0 }
+  });
+  const calls = [];
+  const client = createGitHubClient({
+    cache: createGitHubCache(storage),
+    fetchImpl: async (url) => { calls.push(url); throw new Error('Unexpected network request'); }
+  });
+
+  assert.equal(client.getTrackedRepositories().length, 0);
+  assert.equal(client.getCachedRepositories().length, 101);
+  assert.equal(client.getCachedRepositories()[0].isPublic, true, 'legacy public-cache entries remain explicitly trackable');
+  assert.equal(client.getStatus().trackedCount, 0);
+  assert.equal(shouldRefreshGitHub(client.getSnapshot(), NOW), false);
+  const result = await client.sync();
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 0, 'startup state and manual sync do not discover the owner repository list');
+  assert.equal(client.getSnapshot().repositories[100].docs[0].excerpt, 'kept 100');
+  const fromLegacyCache = createGitHubClient({
+    cache: createGitHubCache(storage),
+    fetchImpl: async () => { throw new Error('Tracking cached data must not fetch yet'); }
+  });
+  assert.equal(fromLegacyCache.trackRepository(fromLegacyCache.getCachedRepositories()[0]).ok, true);
+  assert.equal(fromLegacyCache.getTrackedRepositories().length, 1);
+});
+
+test('GitHub search runs on demand, filters to public owned non-forks, and does not auto-track', async () => {
+  const calls = [];
+  let conditional = false;
+  const items = [
+    githubRepo(11, 'iris-app'),
+    githubRepo(12, 'iris-fork', { fork: true }),
+    githubRepo(13, 'iris-private', { private: true }),
+    githubRepo(14, 'iris-other', { full_name: 'Other/iris-other', owner: { login: 'Other' } })
+  ];
+  const client = createGitHubClient({
+    cache: createGitHubCache(memStorage()),
+    fetchImpl: async (url, init) => {
+      calls.push(url);
+      if (init.headers['If-None-Match']) {
+        conditional = true;
+        return jsonResponse(null, 304, { etag: '"search-v1"', 'x-ratelimit-remaining': '8', 'x-ratelimit-resource': 'search' });
+      }
+      return jsonResponse({ total_count: 4, items }, 200, {
+        etag: '"search-v1"', 'x-ratelimit-remaining': '9', 'x-ratelimit-resource': 'search'
+      });
+    }
+  });
+
+  assert.equal(calls.length, 0, 'search is never issued until requested');
+  const first = await client.searchRepositories('iris');
+  assert.equal(first.ok, true);
+  assert.deepEqual(first.repositories.map((repo) => repo.fullName), ['Keyayco/iris-app']);
+  const query = new URL(calls[0]).searchParams.get('q');
+  assert.match(query, /user:Keyayco/);
+  assert.match(query, /in:name/);
+  assert.match(query, /iris/);
+  assert.equal(client.getTrackedRepositories().length, 0, 'search results require a separate tracking action');
+  assert.equal(client.getStatus().rateLimitResource, 'search');
+
+  const second = await client.searchRepositories('iris');
+  assert.equal(second.ok, true);
+  assert.equal(conditional, true, 'search requests use the existing ETag cache');
+  assert.equal(client.trackRepository(first.repositories[0]).duplicate, false);
+  assert.equal(client.trackRepository(first.repositories[0]).duplicate, true);
+  assert.equal(client.getTrackedRepositories().length, 1);
+});
+
+test('search and sync serialize requests so separate API quota resources are not mixed', async () => {
+  let releaseRequest;
+  const pendingResponse = new Promise((resolve) => { releaseRequest = resolve; });
+  let calls = 0;
+  const client = createGitHubClient({
+    cache: createGitHubCache(memStorage()),
+    fetchImpl: async () => {
+      calls += 1;
+      await pendingResponse;
+      return jsonResponse({ total_count: 0, items: [] }, 200, {
+        'x-ratelimit-remaining': '9', 'x-ratelimit-resource': 'search'
+      });
+    }
+  });
+  const searching = client.searchRepositories('iris');
+  const sync = await client.sync();
+  assert.equal(sync.ok, false);
+  assert.match(sync.error, /current GitHub request/i);
+  assert.equal(calls, 1, 'sync does not start while the search request is in flight');
+  releaseRequest();
+  assert.equal((await searching).ok, true);
+  assert.equal(client.getStatus().rateLimitResource, 'search');
+});
+
+test('a pasted public repository URL is checked without tracking until explicit confirmation', async () => {
+  const calls = [];
+  const client = createGitHubClient({
+    cache: createGitHubCache(memStorage()),
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init.method });
+      const parsed = new URL(url);
+      if (parsed.pathname === '/repos/Elsewhere/open-project') {
+        return jsonResponse({
+          id: 701, name: 'open-project', full_name: 'Elsewhere/open-project',
+          owner: { login: 'Elsewhere' }, private: false, fork: false,
+          html_url: 'https://github.com/Elsewhere/open-project', default_branch: 'main', size: 1
+        }, 200, { 'x-ratelimit-remaining': '55', 'x-ratelimit-resource': 'core' });
+      }
+      if (parsed.pathname === '/repos/Elsewhere/private-project') {
+        return jsonResponse({ id: 702, private: true }, 200);
+      }
+      assert.fail(`Unexpected GitHub request: ${url}`);
+    }
+  });
+
+  const checked = await client.lookupRepository('https://github.com/Elsewhere/open-project.git');
+  assert.equal(checked.ok, true);
+  assert.equal(checked.repository.fullName, 'Elsewhere/open-project');
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(client.getTrackedRepositories().length, 0);
+  assert.equal(client.trackRepository(checked.repository).ok, true);
+  assert.equal(client.trackRepository({ ...checked.repository, isPublic: false }).ok, false);
+  const privateCheck = await client.lookupRepository('https://github.com/Elsewhere/private-project');
+  assert.equal(privateCheck.ok, false);
+  assert.match(privateCheck.error, /public/i);
+  assert.equal(client.getTrackedRepositories().length, 1);
+});
+
+test('tracking persists, prevents duplicate entries, and untracking preserves cache and Iris records', () => {
+  const storage = memStorage();
+  const cachedProfile = {
+    id: 811, repoId: 811, fullName: 'Keyayco/legacy-project', name: 'Legacy project',
+    isPublic: true,
+    description: 'Keep this cached data', url: 'https://github.com/Keyayco/legacy-project',
+    defaultBranch: 'main', branches: ['main'], branchCount: 1, commits: [],
+    docs: [{ path: 'README.md', excerpt: 'Cached excerpt' }], warnings: [],
+    syncedAt: '2026-11-04T08:00:00Z', syncState: 'complete', syncError: ''
+  };
+  const cache = createGitHubCache(storage);
+  cache.setSnapshot({ repositories: [cachedProfile], counts: { found: 1, synced: 1, pending: 0, failed: 0 } });
+  const client = createGitHubClient({ cache });
+  const selected = githubRepo(812, 'selected-project');
+  assert.equal(client.trackRepository(selected).ok, true);
+  assert.equal(client.trackRepository(selected).duplicate, true);
+  assert.equal(client.trackRepository(cachedProfile).ok, true);
+
+  const reloaded = createGitHubClient({ cache: createGitHubCache(storage) });
+  assert.equal(reloaded.getTrackedRepositories().length, 2);
+  assert.equal(reloaded.getCachedRepositories().length, 1);
+  assert.equal(reloaded.untrackRepository(selected), true);
+  assert.equal(reloaded.untrackRepository(selected), false);
+  assert.equal(reloaded.getTrackedRepositories().length, 1);
+  assert.equal(reloaded.getCachedRepositories()[0].docs[0].excerpt, 'Cached excerpt');
+  assert.equal(createGitHubCache(storage).getSnapshot().repositories[0].fullName, 'Keyayco/legacy-project');
+
+  const store = createStore(storage);
+  const manual = store.add('projects', { name: 'Legacy project', purpose: 'Keep manual data' }).record;
+  store.syncGitHubProjects([cachedProfile]);
+  const before = store.getState().projects.find((project) => project.id === manual.id);
+  assert.equal(before.purpose, 'Keep manual data');
+  assert.equal(before.github.fullName, 'Keyayco/legacy-project');
+  assert.equal(reloaded.untrackRepository(cachedProfile), true);
+  assert.equal(reloaded.getTrackedRepositories().length, 0);
+  const after = store.getState().projects.find((project) => project.id === manual.id);
+  assert.deepEqual(after, before, 'untracking has no effect on stored project fields');
+});
+
+test('GitHub sync requests details only for tracked repositories and retains other cached profiles', async () => {
+  const cachedOnly = {
+    id: 901, fullName: 'Keyayco/not-selected', name: 'not-selected',
+    description: 'Preserve me', docs: [{ path: 'README.md', excerpt: 'Keep this' }],
+    syncState: 'complete', syncedAt: '2026-11-02T00:00:00Z'
+  };
+  const cache = createGitHubCache(memStorage());
+  cache.setSnapshot({ repositories: [cachedOnly] });
+  const selected = githubRepo(902, 'selected', { description: 'Chosen repository' });
+  const calls = [];
+  const client = createGitHubClient({
+    cache,
+    fetchImpl: async (url) => {
+      calls.push(url);
+      const parsed = new URL(url);
+      assert.notEqual(parsed.pathname, '/users/Keyayco/repos', 'sync must not rediscover all repositories');
+      assert.ok(parsed.pathname.startsWith('/repos/Keyayco/selected/'), `unexpected repository request ${url}`);
+      if (parsed.pathname.endsWith('/branches')) return jsonResponse([{ name: 'main' }]);
+      if (parsed.pathname.endsWith('/commits')) return jsonResponse([]);
+      if (parsed.pathname.includes('/git/trees/')) return jsonResponse({ truncated: false, tree: [] });
+      assert.fail(`Unexpected GitHub request: ${url}`);
+    }
+  });
+  client.trackRepository(selected);
+  const result = await client.sync();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.repositories.length, 1);
+  assert.equal(result.repositories[0].fullName, 'Keyayco/selected');
+  assert.equal(calls.length, 3);
+  assert.equal(client.getSnapshot().repositories.length, 2);
+  assert.deepEqual(client.getSnapshot().repositories.find((repo) => repo.id === 901), cachedOnly);
+  assert.equal(client.getStatus().trackedCount, 1);
+  assert.equal(client.getStatus().cachedCount, 2);
+});
+
+test('GitHub selective sync paginates branches, reads docs/commits, and flags objective doc conflicts', async () => {
   const storage = memStorage();
   const cache = createGitHubCache(storage);
   const repo = {
@@ -142,10 +377,6 @@ test('GitHub sync paginates discovery and branches, reads docs/commits, and flag
     description: 'Project command centre', html_url: 'https://github.com/Keyayco/iris',
     default_branch: 'main', pushed_at: '2026-11-01T11:00:00Z', size: 120
   };
-  const listPageOne = Array.from({ length: 100 }, (_, i) => ({
-    id: i + 1, name: `fork-${i}`, full_name: `Keyayco/fork-${i}`,
-    owner: { login: 'Keyayco' }, private: false, fork: true
-  }));
   const branchPageOne = [
     ...Array.from({ length: 99 }, (_, i) => ({ name: `feature-${i + 1}` })),
     { name: 'main' }
@@ -153,12 +384,10 @@ test('GitHub sync paginates discovery and branches, reads docs/commits, and flag
   const commitSha = 'abcdef0123456789abcdef0123456789abcdef01';
   const responsesByUrl = new Map();
   const calls = [];
-  let conditionalRequests = 0;
   const fixedNow = new Date('2026-11-03T12:00:00Z');
   const fetchImpl = async (url, init) => {
     calls.push(url);
     if (init.headers['If-None-Match']) {
-      conditionalRequests += 1;
       return jsonResponse(null, 304, { etag: init.headers['If-None-Match'] });
     }
 
@@ -174,12 +403,7 @@ test('GitHub sync paginates discovery and branches, reads docs/commits, and flag
     }
     let body;
     let headers = {};
-    if (parsed.pathname === '/users/Keyayco/repos') {
-      if (parsed.searchParams.get('page') === '1') {
-        body = listPageOne;
-        headers.link = '<https://api.github.com/users/Keyayco/repos?type=owner&sort=pushed&per_page=100&page=2>; rel="next"';
-      } else body = [repo];
-    } else if (parsed.pathname === '/repos/Keyayco/iris/branches') {
+    if (parsed.pathname === '/repos/Keyayco/iris/branches') {
       if (!parsed.searchParams.has('page') || parsed.searchParams.get('page') === '1') {
         body = branchPageOne;
         headers.link = '<https://api.github.com/repos/Keyayco/iris/branches?per_page=100&page=2>; rel="next"';
@@ -214,6 +438,7 @@ test('GitHub sync paginates discovery and branches, reads docs/commits, and flag
     return jsonResponse(body, 200, { ...headers, etag });
   };
   const client = createGitHubClient({ fetchImpl, cache, clock: () => fixedNow });
+  client.trackRepository(repo);
 
   const first = await client.sync();
   assert.equal(first.ok, true, JSON.stringify(first.status));
@@ -232,14 +457,15 @@ test('GitHub sync paginates discovery and branches, reads docs/commits, and flag
   assert.ok(profile.warnings.some((warning) => warning.type === 'outdated'));
   assert.equal(profile.tests, undefined);
   assert.equal(profile.deployment, undefined);
-  assert.ok(calls.some((url) => new URL(url).searchParams.get('page') === '2' && new URL(url).pathname === '/users/Keyayco/repos'));
+  assert.equal(calls.some((url) => new URL(url).pathname === '/users/Keyayco/repos'), false);
   assert.ok(calls.some((url) => new URL(url).searchParams.get('page') === '2' && new URL(url).pathname === '/repos/Keyayco/iris/branches'));
   assert.equal(calls.some((url) => url.includes('.github%2Fnotes.md') || url.includes('node_modules')), false);
   assert.ok(storage.d[GITHUB_CACHE_KEY]);
 
+  const callsBeforeCachedSync = calls.length;
   const second = await client.sync();
   assert.equal(second.ok, true);
-  assert.ok(conditionalRequests > 0, 'cached ETags should enable conditional requests');
+  assert.equal(calls.length, callsBeforeCachedSync, 'unchanged tracked repositories reuse cached details without a discovery pass');
   assert.equal(second.repositories[0].docs.length, 2);
   assert.equal(responsesByUrl.size > 0, true);
 });
@@ -304,22 +530,32 @@ test('GitHub project upsert avoids duplicates and preserves manual fields and na
 
 test('GitHub refresh respects stale and retry windows', () => {
   const now = new Date('2026-11-03T12:00:00Z');
-  assert.equal(shouldRefreshGitHub({}, now), true);
+  assert.equal(shouldRefreshGitHub({}, now), false, 'no repositories are scanned without an explicit tracking choice');
+  const tracked = [{ id: 1, fullName: 'Keyayco/a', name: 'a' }];
+  const syncedProfile = { id: 1, fullName: 'Keyayco/a', syncState: 'complete' };
+  assert.equal(shouldRefreshGitHub({ trackedRepositories: tracked }, now), true);
   assert.equal(shouldRefreshGitHub({
+    trackedRepositories: tracked,
+    repositories: [syncedProfile],
     lastSyncAt: '2026-11-03T11:00:00Z',
     lastAttemptAt: '2026-11-03T11:55:00Z'
   }, now), false);
   assert.equal(shouldRefreshGitHub({
+    trackedRepositories: tracked,
+    repositories: [syncedProfile],
     lastSyncAt: '2026-11-03T05:00:00Z',
     lastAttemptAt: '2026-11-03T05:00:00Z'
   }, now), true);
   assert.equal(shouldRefreshGitHub({
+    trackedRepositories: tracked,
+    repositories: [syncedProfile],
     lastAttemptAt: '2026-11-03T11:55:00Z'
   }, now), false);
   assert.equal(shouldRefreshGitHub({
+    trackedRepositories: tracked,
+    repositories: [{ id: 1, fullName: 'Keyayco/a', syncState: 'queued' }],
     lastAttemptAt: '2026-11-03T11:55:00Z',
     rateLimitResetAt: '2026-11-03T11:59:00Z',
-    counts: { pending: 2 }
   }, now), true, 'queued work should resume after the quota reset, even inside the retry cooldown');
 });
 
@@ -340,12 +576,13 @@ test('GitHub sync skips empty repositories without detail API calls', async () =
       return jsonResponse([empty]);
     }
   });
+  client.trackRepository(empty);
   const result = await client.sync();
   assert.equal(result.ok, true);
   assert.equal(result.status.counts.synced, 1);
   assert.equal(result.repositories[0].syncState, 'empty');
   assert.equal(result.repositories[0].empty, true);
-  assert.equal(calls.length, 1, 'only the owner repository list should be requested');
+  assert.equal(calls.length, 0, 'an explicitly tracked empty repository needs no detail requests');
 });
 
 test('GitHub sync treats missing documents as optional and preserves cached project data on API errors', async () => {
@@ -375,7 +612,6 @@ test('GitHub sync treats missing documents as optional and preserves cached proj
     clock: () => new Date('2026-11-03T12:00:00Z'),
     fetchImpl: async (url) => {
       const parsed = new URL(url);
-      if (parsed.pathname === '/users/Keyayco/repos') return jsonResponse([repo]);
       if (parsed.pathname.endsWith('/branches')) {
         return jsonResponse({ message: 'temporary upstream failure' }, 500);
       }
@@ -385,6 +621,7 @@ test('GitHub sync treats missing documents as optional and preserves cached proj
       assert.fail(`Unexpected request: ${url}`);
     }
   });
+  client.trackRepository(repo);
 
   const result = await client.sync();
   assert.equal(result.ok, false);
@@ -416,8 +653,7 @@ test('GitHub sync queues work within the public API budget and resumes after res
     if (now.getTime() >= Date.parse('2026-11-03T13:00:00Z')) postResetCalls += 1;
     const parsed = new URL(url);
     let body;
-    if (parsed.pathname === '/users/Keyayco/repos') body = repos;
-    else if (parsed.pathname.endsWith('/branches')) body = [{ name: 'main' }];
+    if (parsed.pathname.endsWith('/branches')) body = [{ name: 'main' }];
     else if (parsed.pathname.endsWith('/commits')) body = [];
     else if (parsed.pathname.includes('/git/trees/')) body = { truncated: false, tree: [] };
     else assert.fail(`Unexpected request: ${url}`);
@@ -430,12 +666,13 @@ test('GitHub sync queues work within the public API budget and resumes after res
     });
   };
   const client = createGitHubClient({ cache, clock: () => now, fetchImpl });
+  for (const repo of repos) client.trackRepository(repo);
 
   const first = await client.sync();
   assert.equal(first.status.counts.found, 20);
   assert.equal(first.status.counts.synced, 12);
   assert.equal(first.status.counts.pending, 8);
-  assert.equal(apiCalls, 37, 'discovery plus three API requests for each of 12 repositories');
+  assert.equal(apiCalls, 36, 'sync makes three GitHub API calls for each of 12 tracked repositories');
   assert.ok(Number(first.status.rateLimitRemaining) >= 8, 'leave rate-limit reserve for normal page variation');
   assert.match(first.status.notice, /queued.*quota resets/i);
 
@@ -478,11 +715,17 @@ test('GitHub API rate-limit failures preserve the last successful cache', async 
       'x-ratelimit-reset': reset
     })
   });
+  client.trackRepository(githubRepo(1, 'cached', {
+    description: 'Last known description',
+    pushed_at: '2026-11-02T00:00:00Z'
+  }));
 
   const result = await client.sync();
   assert.equal(result.ok, false);
-  assert.equal(result.status.phase, 'error');
-  assert.match(result.status.error, /rate limit reached/i);
+  assert.equal(result.status.phase, 'partial');
+  assert.equal(result.status.counts.pending, 1);
+  assert.match(result.status.notice, /quota resets/i);
+  assert.equal(result.repositories[0].syncState, 'queued');
   assert.equal(result.repositories[0].fullName, 'Keyayco/cached');
   assert.equal(client.getSnapshot().lastSyncAt, '2026-11-02T12:00:00Z');
   assert.equal(client.getSnapshot().repositories[0].description, 'Last known description');

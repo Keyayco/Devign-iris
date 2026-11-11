@@ -37,6 +37,20 @@ const ctx = {
   loadSample: () => store.loadSample(getSampleRecords()),
   openProject: (id) => { openRow(id); navigate('projects'); },
   get githubStatus() { return githubStatus; },
+  get githubTrackedRepositories() { return githubClient.getTrackedProfiles(); },
+  get githubCachedRepositories() { return githubClient.getCachedRepositories(); },
+  searchGitHubRepositories: (query) => githubClient.searchRepositories(query),
+  lookupGitHubRepository: (url) => githubClient.lookupRepository(url),
+  trackGitHubRepository: (repo) => {
+    const tracked = githubClient.trackRepository(repo);
+    scheduleGitHubResume();
+    return tracked;
+  },
+  untrackGitHubRepository: (repo) => {
+    const removed = githubClient.untrackRepository(repo);
+    scheduleGitHubResume();
+    return removed;
+  },
   syncGitHub: () => syncGitHub()
 };
 
@@ -54,7 +68,8 @@ function scheduleGitHubResume() {
   githubResumeTimer = 0;
   const snapshot = githubClient.getSnapshot();
   const status = githubClient.getStatus();
-  const shouldResume = (snapshot.counts?.pending || 0) > 0 || /rate limit/i.test(snapshot.error || '');
+  const shouldResume = status.trackedCount > 0 &&
+    ((status.counts?.pending || 0) > 0 || /rate limit/i.test(status.error || ''));
   const resetAt = Date.parse(snapshot.rateLimitResetAt || status.rateLimitResetAt || '');
   if (!shouldResume || !Number.isFinite(resetAt)) return;
   const delay = resetAt - Date.now() + 1500;
@@ -107,7 +122,7 @@ function render() {
 
 store.subscribe(() => render());
 onRouteChange(() => { render(); window.scrollTo(0, 0); });
-store.syncGitHubProjects(githubClient.getSnapshot().repositories);
+store.syncGitHubProjects(githubClient.getTrackedProfiles());
 render();
 scheduleGitHubResume();
 if (shouldRefreshGitHub(githubClient.getSnapshot())) void syncGitHub();

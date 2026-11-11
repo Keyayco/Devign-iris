@@ -8,7 +8,7 @@ Built with vanilla HTML, CSS, and JavaScript (native ES modules). No frameworks,
 ## Current boundaries
 
 - No AI model is connected. The command box matches a fixed set of local commands.
-- GitHub sync is read-only and limited to public, non-fork repositories owned by `Keyayco`. It uses GitHub's anonymous public API; no credential or token is requested or stored.
+- GitHub access is read-only and uses GitHub's public API. Name search covers public, non-fork repositories owned by `Keyayco`; a pasted URL can verify any public GitHub repository. No credential or token is requested or stored.
 - No Replit or agent-session integration.
 - No server database. Records live in the browser's localStorage (this device and browser only).
 - No login.
@@ -35,13 +35,13 @@ Environment variables: none required. `PORT` is optional for `serve.mjs`.
 
 ## GitHub read-only sync
 
-The Command view's Connections panel can sync the public repositories owned by `Keyayco`. On first open and when the last complete sync is at least six hours old, Iris starts a sync automatically; the button also starts one on demand.
+Command → Connections → GitHub monitors only repositories explicitly added to tracking. Iris never lists or scans the account's full repository set on startup. Search runs only when submitted and returns up to 100 matching public, non-fork repositories owned by `Keyayco`; refine broad searches to see other matches. A pasted repository URL is looked up on demand and must resolve to a public GitHub repository. Search results and checked URLs are not tracked until the user chooses **Track repository**.
 
-The client discovers the owner's repositories through GitHub REST, filters out private and forked repositories, follows pagination, and reads repository metadata, up to 200 branches, five recent commits, and up to ten small Markdown/text project documents (README, state/handover/log/manifest files, and other likely project docs). Document text is fetched from GitHub's public raw-content host. Empty repositories are recorded without detail requests; missing documents are skipped. Successful API responses and normalized repository data are cached in this browser's localStorage, separately from the Iris project records.
+The selected repositories are saved in the existing GitHub cache key alongside the normalized repository data and API response cache. Any existing account-wide snapshot (including the earlier 101 previously discovered repositories) is preserved as cached-only data; it is not treated as tracked. Cached-only entries remain visible in a collapsed list and can be explicitly added to tracking. Untracking removes only the tracking choice; it does not delete cached repository data or Iris project records.
 
-**Anonymous API quota affects first sync.** GitHub's unauthenticated REST limit is shared by the browser's public requests. To stay below it, one sync pass fetches details for at most 12 changed repositories and retains a small request reserve; remaining repositories are shown as queued. Iris waits for the reset, resumes while the tab remains open, and also resumes on a later open. For a large account, first sync can span multiple hourly quota windows. API failures preserve the last successful repository data and are surfaced in Connections and the affected project.
+Selecting a tracked repository and pressing **Sync tracked** reads its metadata, up to 200 branches, five recent commits, and up to ten small Markdown/text project documents. Empty repositories need no detail requests; missing documents are skipped. Sync runs on demand, refreshes stale tracked data on a later open, and resumes queued tracked work after quota reset while the tab remains open or on a later open. Each pass details at most 12 changed tracked repositories and keeps a small core API request reserve. Search uses GitHub's separate search quota; the UI shows the latest API quota resource, remaining requests, and reset time when GitHub returns those headers. API failures preserve the last successful repository data and are surfaced in Connections and the affected project.
 
-GitHub values are stored in the additive `project.github` field. Existing Iris notes, project state, and other manually entered fields are not overwritten. A unique exact-name manual project can be linked; ambiguous name matches are flagged, while repository identity prevents repeat syncs from creating duplicates. A repository that disappears from the public owner listing is retained and marked rather than deleted.
+Only tracked repositories are applied to the additive `project.github` field during startup hydration or sync. Existing Iris notes, project state, and other manually entered fields are not overwritten. A unique exact-name manual project can be linked; ambiguous name matches are flagged, while repository identity prevents repeat syncs from creating duplicates. Project details label GitHub information as tracked or cached-only.
 
 Iris reads documents to show short excerpts and flag explicit default-branch or current-revision conflicts, plus a declared update date more than 30 days behind the latest commit date. These are deterministic indicators, not AI summaries or proof that a document is wrong. Commit activity is never treated as evidence that tests passed or a deployment happened.
 
@@ -57,7 +57,7 @@ js/store.js             State + localStorage persistence (storage injected)
 js/schema.js            Field specs, enums, validation
 js/selectors.js         Derived facts from records
 js/commands.js          Local command interpreter (pure)
-js/integrations/github.js         Public GitHub REST client and sync orchestration
+js/integrations/github.js         Public GitHub search, URL lookup, tracking and selective sync
 js/integrations/github-cache.js   Separate browser cache for GitHub data
 js/sample-data.js       Labelled demonstration records
 js/dom.js, forms.js     DOM helpers, add/edit dialog

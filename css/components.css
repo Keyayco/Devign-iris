@@ -148,6 +148,21 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
 .github-connection__actions { margin-top: var(--sp-3); }
 .github-connection progress { display: block; width: 100%; height: 0.5rem; margin-top: var(--sp-3); accent-color: var(--cyan); }
 .github-connection > p { margin-top: var(--sp-2); overflow-wrap: anywhere; }
+.github-connection__section-title { margin-top: var(--sp-4); }
+.github-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2); margin-top: var(--sp-3); }
+.github-form .cmd__input { min-width: 0; }
+.github-repository-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; border-top: 1px solid var(--line); }
+.github-repository { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line); }
+.github-repository__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.github-repository__top > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.github-repository__top small { display: block; margin-top: 2px; color: var(--text-muted); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.github-repository > p { margin-top: var(--sp-1); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.github-repository__actions { display: flex; justify-content: flex-end; margin-top: var(--sp-2); }
+.github-cached { margin-top: var(--sp-3); border-top: 1px solid var(--line); }
+.github-cached > summary { min-height: var(--tap); padding: var(--sp-2) 0; color: var(--text-muted); cursor: pointer; }
+.github-cached > p { font-size: var(--fs-sm); }
+.github-verified { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-top: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-md); }
+.github-verified p { min-width: 0; overflow-wrap: anywhere; }
 
 .github-project { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 .github-project__head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }

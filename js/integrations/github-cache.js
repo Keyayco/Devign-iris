@@ -9,6 +9,7 @@ const emptyCache = () => ({
   version: 1,
   lastAttemptAt: '',
   lastSyncAt: '',
+  trackedRepositories: [],
   repositories: [],
   counts: { found: 0, synced: 0, pending: 0, failed: 0 },
   error: '',
@@ -31,9 +32,19 @@ export function createGitHubCache(storage = null) {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.version === 1 && Array.isArray(parsed.repositories)) {
+          // The v1 cache was populated only from GitHub's anonymous public
+          // owner listing; mark those old profiles so explicit tracking can
+          // safely reuse them without rescanning the account.
+          const repositories = parsed.repositories.map((repo) => ({
+            ...repo,
+            isPublic: repo?.isPublic === true || repo?.private === false ||
+              (repo?.isPublic == null && repo?.private == null)
+          }));
           state = {
             ...emptyCache(),
             ...parsed,
+            trackedRepositories: Array.isArray(parsed.trackedRepositories) ? parsed.trackedRepositories : [],
+            repositories,
             counts: { ...emptyCache().counts, ...(parsed.counts || {}) },
             responses: parsed.responses && typeof parsed.responses === 'object' ? parsed.responses : {}
           };

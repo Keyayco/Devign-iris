@@ -2,6 +2,18 @@
 
 Chronological. Entries state what actually happened.
 
+2026-11-09 - Selective GitHub repository tracking
+
+- Replaced account-wide repository discovery with on-demand name search for public, non-fork "Keyayco" repositories and on-demand verification of direct public GitHub repository URLs.
+- Added explicit tracking, duplicate prevention, persistence, manual untracking, tracked/cached-only UI sections, per-repository sync status and last-sync dates, and API quota display when headers are available.
+- Sync, startup refresh, project-store hydration, and quota-aware resume now operate only on explicitly tracked repositories. No owner-wide repository list is requested.
+- Kept the existing GitHub cache key and made any legacy cache containing the 101 discovered repository profiles load as cached-only; tracking defaults to empty. Untracking does not delete cached repository data or Iris project records. The user's actual browser localStorage was not available in this repository checkout.
+- Updated "README.md", "STATE.md", "HANDOVER.md", "FILE_MANIFEST.md", and the Command/Projects UI documentation and code.
+- Expanded the dependency-free test suite to cover URL validation, on-demand search, explicit tracking, duplicate prevention, persistence, selective sync, untracking, cache/project preservation, and quota-aware resume.
+- Verification: "npm test" passed 30/30 with Node 24.22.1; JavaScript syntax checks passed; "git diff --check" passed.
+- The optional browser smoke test was not run because Python Playwright is unavailable. No browser verification or live GitHub repository search/sync was performed.
+- The secure PAT-entry form was unavailable, so no credential was requested or stored. The implementation is committed on local "main"; no remote push or deployment was performed.
+
 2026-11-08 - GitHub integration merged and documentation aligned
 
 - Merged PR #1, "Add read-only GitHub integration", into "main".

@@ -1,8 +1,8 @@
 FILE_MANIFEST
 
-This manifest describes the tracked source tree for Devign Iris on GitHub "main".
+This manifest describes the tracked source tree for Devign Iris. Selective tracking is committed on local "main"; the remote branch has not been updated.
 
-The read-only GitHub integration is merged. The inventory below reflects the current tracked project structure on GitHub main.
+No files were added or removed for the selective tracking milestone.
 
 Source tree
 
@@ -31,7 +31,7 @@ Path| Purpose
 "js/commands.js"| Local command system
 "js/sample-data.js"| Sample records
 "js/iris-eye.js"| Iris eye component
-"js/integrations/github.js"| Read-only public GitHub API integration
+"js/integrations/github.js"| Public GitHub search, URL verification, tracking and selective sync
 "js/integrations/github-cache.js"| Separate GitHub localStorage cache
 "js/views/actions.js"| Shared view actions
 "js/views/activity.js"| Activity view
@@ -46,32 +46,31 @@ Total: 34 tracked files.
 
 GitHub integration status
 
-- Pull request: "#1 — Add read-only GitHub integration" (https://github.com/Keyayco/Devign-iris/pull/1)
-- Feature commit: "8a671b9"
-- Merge commit: "4919f9e"
-- Status: merged into "main"
-- Deployment: not performed
+- Selective repository tracking is committed to the local "main" branch from base revision "57d25e9"; it is not pushed.
+- Search is on demand and limited to public non-fork repositories owned by "Keyayco". Pasted direct HTTPS repository URLs are checked on demand and may target any public repository.
+- Search results and checked URLs need explicit tracking. Startup refresh and resume operate only on tracked repositories.
+- Any old cache containing the previous 101 discovered repository profiles loads as cached-only; tracking defaults to empty. The user's browser localStorage was not available to inspect in this checkout.
+- Untracking preserves GitHub cache entries and Iris project records. Only tracked repository profiles update project records.
+- No credential was collected or stored; no push or deployment was performed.
 
-The integration discovers public, non-fork repositories owned by the configured GitHub account, retrieves project information and documentation, and caches results locally.
+The integration retrieves selected repository metadata and documents using anonymous public GitHub REST requests and caches results in browser localStorage.
 
-It is browser-only and read-only. It does not use a GitHub token, backend, database, or additional dependencies.
+It is browser-only and read-only. It does not use a GitHub token, backend, database, framework, or additional dependencies.
 
 Verification boundaries
 
-- Original implementation test run: "npm test", 23/23 passed.
-- JavaScript syntax checks passed.
-- Static server and mocked browser checks passed.
-- Initial bounded live GitHub sync completed.
-- Full live synchronisation and automatic browser resume remain unverified.
-- "tests/smoke.py" was not run because Python Playwright was unavailable.
-- No deployment has been performed.
+- Updated full test suite: "npm test", 30/30 passed with Node 24.22.1.
+- Changed JavaScript syntax checks and "git diff --check" passed.
+- Optional "tests/smoke.py" was not run because Python Playwright is unavailable; browser verification was not performed.
+- No live repository search or selective sync was performed as part of this change.
+- No push or deployment has been performed.
 
 See "STATE.md", "HANDOVER.md" and "LOGS.md" for the detailed current state, operating instructions and historical verification record.
 
 Maintenance rules
 
 - Update this manifest when tracked files are added, removed or renamed.
-- Keep the inventory aligned with the actual GitHub "main" branch.
+- Keep the inventory aligned with the source tree; local-only changes must be labelled until pushed.
 - Do not report local or proposed files as committed.
 - Do not claim tests, pushes or deployments unless they were actually verified.
 - Do not remove historical records merely because the project has moved forward.

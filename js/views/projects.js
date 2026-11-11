@@ -13,7 +13,7 @@ function safeGitHubLink(url, text) {
   return h('span', null, text);
 }
 
-function githubDetails(github) {
+function githubDetails(github, tracked = false) {
   if (!github) return null;
   const warningList = github.warnings || [];
   const docs = github.docs || [];
@@ -27,6 +27,7 @@ function githubDetails(github) {
     h('div', { class: 'github-project__head' },
       h('h3', null, 'GitHub-derived information'),
       badge('Read-only source', 'cyan'),
+      badge(tracked ? 'Tracked' : 'Cached only · not monitored', tracked ? 'ok' : 'warn'),
       github.syncState === 'queued' ? badge('Sync queued', 'warn') : null,
       github.syncState === 'empty' ? badge('Empty repository', 'warn') : null,
       github.syncState === 'error' ? badge('Sync issue', 'bad') : null,
@@ -69,6 +70,7 @@ function githubDetails(github) {
 
 export function renderProjects(ctx) {
   const state = ctx.store.getState();
+  const trackedGitHub = ctx.githubTrackedRepositories || [];
   const root = h('section', null, viewHead('Projects', 'Registry of Devign projects and their recorded state.', button('Add project', () => addRecord(ctx, 'projects', 'Add project'), 'primary')));
   if (!state.projects.length) {
     root.append(emptyState('No projects yet', 'Add the first project, or load sample data to see how the registry looks. Sample records are always labelled.',
@@ -92,7 +94,10 @@ export function renderProjects(ctx) {
         ['Agents', agents.map((a) => `${a.name} (${label(a.status)})`).join(', ')],
         ['Needs attention', why.join('; ') || 'No recorded reason'],
         ['Last updated', fmtDateTime(p.updatedAt)]
-      ]), githubDetails(p.github), rowActions(ctx, 'projects', p, 'project')])));
+      ]), githubDetails(p.github, trackedGitHub.some((repo) =>
+        String(repo.id) === String(p.github?.repoId || p.github?.id || '') ||
+        String(repo.fullName || '').toLowerCase() === String(p.github?.fullName || '').toLowerCase()
+      )), rowActions(ctx, 'projects', p, 'project')])));
   }
   root.append(list);
   return root;
